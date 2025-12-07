@@ -1,0 +1,36 @@
+{
+  "name": "projet-blockchain-controles",
+  "version": "1.0.0",
+  "description": "Système de gestion des contrôles basé sur la blockchain - ENSA Tétouan",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
+    "deploy:mumbai": "hardhat run scripts/deploy.js --network mumbai",
+    "node": "hardhat node",
+    "manage": "hardhat run scripts/manage-users.js --network localhost",
+    "verify:sepolia": "hardhat verify --network sepolia",
+    "clean": "hardhat clean"
+  },
+  "keywords": [
+    "blockchain",
+    "ethereum",
+    "smart-contracts",
+    "education",
+    "solidity",
+    "hardhat"
+  ],
+  "author": "Étudiants ENSA Tétouan - BDIA",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "hardhat": "^2.27.1"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0",
+    "dotenv": "^17.2.3",
+    "ethers": "^6.16.0"
+  }
+}
