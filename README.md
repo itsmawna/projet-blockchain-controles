@@ -112,7 +112,7 @@ npx hardhat run scripts/deploy.js --network localhost
 
 ```bash
 cd frontend
-npm start
+npm run dev
 ```
 
 Accéder à `http://localhost:3000` 🎉
