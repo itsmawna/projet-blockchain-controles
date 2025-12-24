@@ -3,19 +3,22 @@ pragma solidity ^0.8.19;
 
 /**
  * @title SystemeGestionControles
- * @dev Système de gestion des devoirs et contrôles basé sur blockchain
+ * @dev Gestion devoirs/contrôles + modules/coefs + fichiers off-chain + notes
  */
 contract SystemeGestionControles {
-    
-    // Structures de données
+    // =========================
+    // STRUCTURES
+    // =========================
+
     struct Enseignant {
         address adresse;
         string nom;
-        string clePublique;
+        string clePublique; // RSA public key (base64 / spki)
         bool estActif;
         uint256 dateInscription;
+        uint256 moduleId; // 1 prof -> 1 module principal
     }
-    
+
     struct Etudiant {
         address adresse;
         string nom;
@@ -23,10 +26,19 @@ contract SystemeGestionControles {
         bool estActif;
         uint256 dateInscription;
     }
-    
+
+    struct Module {
+        uint256 id;
+        string nom;
+        uint256 coefficient;
+        address enseignant;
+        bool estActif;
+    }
+
     struct Devoir {
         uint256 id;
         address enseignant;
+        uint256 moduleId;
         string titre;
         string description;
         string clePubliqueChiffrement;
@@ -34,19 +46,40 @@ contract SystemeGestionControles {
         uint256 dateLimite;
         bool estActif;
     }
-    
+
+    struct SoumissionFichier {
+        string hash;
+        string nom;
+        string fileType;
+        string uri;
+        string cleAESChiffree;
+    }
+
+    struct CorrectionFichier {
+        string hash;
+        string nom;
+        string uri;
+    }
+
     struct Soumission {
         uint256 id;
         uint256 devoirId;
+        uint256 moduleId;
         address etudiant;
-        string contenuChiffre; // Réponses chiffrées avec la clé publique
-        string identiteChiffree; // Identité de l'étudiant chiffrée
+
+        string contenuChiffre;
+        string identiteChiffree;
+
+        SoumissionFichier fichier;
+
         uint256 dateSubmission;
         bool estCorrige;
-        uint256 note;
+        uint256 note; // /20
         string commentaire;
+
+        CorrectionFichier fichierCorrection;
     }
-    
+
     struct Annonce {
         uint256 id;
         address auteur;
@@ -55,90 +88,162 @@ contract SystemeGestionControles {
         uint256 dateCreation;
         bool estPublique;
     }
-    
-    // Variables d'état
+
+    // =========================
+    // STATE
+    // =========================
+
     address public administrateur;
-    
+
     mapping(address => Enseignant) public enseignants;
     mapping(address => Etudiant) public etudiants;
+
+    mapping(uint256 => Module) public modules;
+    uint256[] public listeModules;
+    uint256 public compteurModules;
+
     mapping(uint256 => Devoir) public devoirs;
     mapping(uint256 => Soumission) public soumissions;
     mapping(uint256 => Annonce) public annonces;
-    
+
     address[] public listeEnseignants;
     address[] public listeEtudiants;
+
     uint256[] public listeDevoirs;
     uint256[] public listeSoumissions;
     uint256[] public listeAnnonces;
-    
+
     uint256 public compteurDevoirs;
     uint256 public compteurSoumissions;
     uint256 public compteurAnnonces;
-    
-    // Mapping pour retrouver les soumissions d'un devoir
+
     mapping(uint256 => uint256[]) public soumissionsParDevoir;
-    
-    // Mapping pour retrouver les soumissions d'un étudiant
     mapping(address => uint256[]) public soumissionsParEtudiant;
-    
-    // Événements
-    event EnseignantInscrit(address indexed adresse, string nom);
+
+    // ✅ Empêcher double soumission
+    mapping(uint256 => mapping(address => bool)) public aDejaSoumis;
+
+    // =========================
+    // EVENTS
+    // =========================
+
+    event EnseignantInscrit(address indexed adresse, string nom, uint256 moduleId);
     event EtudiantInscrit(address indexed adresse, string nom, string numeroEtudiant);
-    event DevoirCree(uint256 indexed devoirId, address indexed enseignant, string titre);
+    event ModuleCree(uint256 indexed moduleId, string nom, uint256 coefficient, address indexed enseignant);
+    event DevoirCree(uint256 indexed devoirId, address indexed enseignant, string titre, uint256 moduleId);
     event SoumissionEnvoyee(uint256 indexed soumissionId, uint256 indexed devoirId, address indexed etudiant);
     event SoumissionCorrigee(uint256 indexed soumissionId, uint256 note);
     event AnnoncePubliee(uint256 indexed annonceId, address indexed auteur, string titre);
-    
-    // Modificateurs
+
+    // =========================
+    // MODIFIERS
+    // =========================
+
     modifier seulementAdmin() {
         require(msg.sender == administrateur, "Seul l'administrateur peut executer cette action");
         _;
     }
-    
+
     modifier seulementEnseignant() {
         require(enseignants[msg.sender].estActif, "Seul un enseignant peut executer cette action");
         _;
     }
-    
+
     modifier seulementEtudiant() {
         require(etudiants[msg.sender].estActif, "Seul un etudiant peut executer cette action");
         _;
     }
-    
+
     modifier devoirExiste(uint256 _devoirId) {
-        require(devoirs[_devoirId].estActif, "Le devoir n'existe pas");
+        require(devoirs[_devoirId].id != 0 && devoirs[_devoirId].estActif, "Le devoir n'existe pas");
         _;
     }
-    
+
+    modifier moduleExiste(uint256 _moduleId) {
+        require(modules[_moduleId].id != 0 && modules[_moduleId].estActif, "Module inexistant");
+        _;
+    }
+
+    modifier soumissionExiste(uint256 _soumissionId) {
+        require(soumissions[_soumissionId].id != 0, "Soumission inexistante");
+        _;
+    }
+
     constructor() {
         administrateur = msg.sender;
     }
-    
-    // Fonctions d'inscription
-    function inscrireEnseignant(address _adresse, string memory _nom, string memory _clePublique) 
-        public 
-        seulementAdmin 
-    {
+
+    // =========================
+    // MODULES (ADMIN)
+    // =========================
+
+    function creerModule(
+        string calldata _nom,
+        uint256 _coefficient,
+        address _enseignant
+    ) external seulementAdmin returns (uint256) {
+        require(_coefficient > 0, "Coefficient invalide");
+        require(enseignants[_enseignant].estActif, "Enseignant non actif");
+
+        compteurModules++;
+        modules[compteurModules] = Module({
+            id: compteurModules,
+            nom: _nom,
+            coefficient: _coefficient,
+            enseignant: _enseignant,
+            estActif: true
+        });
+
+        listeModules.push(compteurModules);
+
+        // Attacher le module au prof (simple: 1 prof -> 1 module principal)
+        enseignants[_enseignant].moduleId = compteurModules;
+
+        emit ModuleCree(compteurModules, _nom, _coefficient, _enseignant);
+        return compteurModules;
+    }
+
+    function obtenirModules() external view returns (Module[] memory) {
+        Module[] memory arr = new Module[](listeModules.length);
+        for (uint256 i = 0; i < listeModules.length; i++) {
+            arr[i] = modules[listeModules[i]];
+        }
+        return arr;
+    }
+
+    // =========================
+    // INSCRIPTIONS (ADMIN)
+    // =========================
+
+    function inscrireEnseignant(
+        address _adresse,
+        string calldata _nom,
+        string calldata _clePublique
+    ) external seulementAdmin {
+        require(_adresse != address(0), "Adresse invalide");
         require(!enseignants[_adresse].estActif, "Enseignant deja inscrit");
-        
+
         enseignants[_adresse] = Enseignant({
             adresse: _adresse,
             nom: _nom,
             clePublique: _clePublique,
             estActif: true,
-            dateInscription: block.timestamp
+            dateInscription: block.timestamp,
+            moduleId: 0
         });
-        
+
         listeEnseignants.push(_adresse);
-        emit EnseignantInscrit(_adresse, _nom);
+        emit EnseignantInscrit(_adresse, _nom, 0);
     }
-    
-    function inscrireEtudiant(address _adresse, string memory _nom, string memory _numeroEtudiant) 
-        public 
-        seulementAdmin 
-    {
+
+    function inscrireEtudiant(
+        address _adresse,
+        string calldata _nom,
+        string calldata _numeroEtudiant
+    ) external seulementAdmin {
+        require(_adresse != address(0), "Adresse invalide");
         require(!etudiants[_adresse].estActif, "Etudiant deja inscrit");
-        
+
         etudiants[_adresse] = Etudiant({
             adresse: _adresse,
             nom: _nom,
@@ -146,29 +251,31 @@ contract SystemeGestionControles {
             estActif: true,
             dateInscription: block.timestamp
         });
-        
+
         listeEtudiants.push(_adresse);
         emit EtudiantInscrit(_adresse, _nom, _numeroEtudiant);
     }
-    
-    // Fonctions de gestion des devoirs
+
+    // =========================
+    // DEVOIRS (ENSEIGNANT)
+    // =========================
+
     function creerDevoir(
-        string memory _titre,
-        string memory _description,
-        string memory _clePubliqueChiffrement,
+        uint256 _moduleId,
+        string calldata _titre,
+        string calldata _description,
+        string calldata _clePubliqueChiffrement,
         uint256 _dateLimite
-    ) 
-        public 
-        seulementEnseignant 
-        returns (uint256)
-    {
-        require(_dateLimite > block.timestamp, "La date limite doit etre dans le futur");
-        
+    ) external seulementEnseignant moduleExiste(_moduleId) returns (uint256) {
+        require(_dateLimite > block.timestamp, "Date limite invalide");
+        require(modules[_moduleId].enseignant == msg.sender, "Pas le prof de ce module");
+
         compteurDevoirs++;
-        
+
         devoirs[compteurDevoirs] = Devoir({
             id: compteurDevoirs,
             enseignant: msg.sender,
+            moduleId: _moduleId,
             titre: _titre,
             description: _description,
             clePubliqueChiffrement: _clePubliqueChiffrement,
@@ -176,87 +283,109 @@ contract SystemeGestionControles {
             dateLimite: _dateLimite,
             estActif: true
         });
-        
+
         listeDevoirs.push(compteurDevoirs);
-        emit DevoirCree(compteurDevoirs, msg.sender, _titre);
-        
+        emit DevoirCree(compteurDevoirs, msg.sender, _titre, _moduleId);
         return compteurDevoirs;
     }
-    
-    // Fonction de soumission de devoir
+
+    // =========================
+    // SOUMISSIONS (ETUDIANT)
+    // =========================
+
     function soumettreDevoir(
         uint256 _devoirId,
-        string memory _contenuChiffre,
-        string memory _identiteChiffree
-    ) 
-        public 
-        seulementEtudiant 
-        devoirExiste(_devoirId)
-        returns (uint256)
-    {
-        require(block.timestamp <= devoirs[_devoirId].dateLimite, "La date limite est depassee");
-        
+        string calldata _contenuChiffre,
+        string calldata _identiteChiffree,
+        string calldata _fichierHash,
+        string calldata _fichierNom,
+        string calldata _fichierType,
+        string calldata _fichierURI,
+        string calldata _cleAESChiffree
+    ) external seulementEtudiant devoirExiste(_devoirId) returns (uint256) {
+        require(block.timestamp <= devoirs[_devoirId].dateLimite, "Date limite depassee");
+        require(!aDejaSoumis[_devoirId][msg.sender], "Deja soumis");
+
+        aDejaSoumis[_devoirId][msg.sender] = true;
         compteurSoumissions++;
-        
+
+        uint256 moduleId = devoirs[_devoirId].moduleId;
+
         soumissions[compteurSoumissions] = Soumission({
             id: compteurSoumissions,
             devoirId: _devoirId,
+            moduleId: moduleId,
             etudiant: msg.sender,
             contenuChiffre: _contenuChiffre,
             identiteChiffree: _identiteChiffree,
+            fichier: SoumissionFichier({
+                hash: _fichierHash,
+                nom: _fichierNom,
+                fileType: _fichierType,
+                uri: _fichierURI,
+                cleAESChiffree: _cleAESChiffree
+            }),
             dateSubmission: block.timestamp,
             estCorrige: false,
             note: 0,
-            commentaire: ""
+            commentaire: "",
+            fichierCorrection: CorrectionFichier({ hash: "", nom: "", uri: "" })
         });
-        
+
         listeSoumissions.push(compteurSoumissions);
         soumissionsParDevoir[_devoirId].push(compteurSoumissions);
         soumissionsParEtudiant[msg.sender].push(compteurSoumissions);
-        
+
         emit SoumissionEnvoyee(compteurSoumissions, _devoirId, msg.sender);
-        
         return compteurSoumissions;
     }
-    
-    // Fonction de correction (enseignant)
+
+    // =========================
+    // CORRECTION (ENSEIGNANT)
+    // =========================
+
     function corrigerSoumission(
         uint256 _soumissionId,
         uint256 _note,
-        string memory _commentaire
-    ) 
-        public 
-        seulementEnseignant 
-    {
+        string calldata _commentaire,
+        string calldata _fichierCorrectionHash,
+        string calldata _fichierCorrectionNom,
+        string calldata _fichierCorrectionURI
+    ) external seulementEnseignant soumissionExiste(_soumissionId) {
+        require(_note <= 20, "Note invalide (0..20)");
+
         Soumission storage soumission = soumissions[_soumissionId];
-        require(soumission.id > 0, "Soumission inexistante");
-        
         Devoir storage devoir = devoirs[soumission.devoirId];
-        require(devoir.enseignant == msg.sender, "Vous n'etes pas l'enseignant de ce devoir");
-        
+
+        require(devoir.enseignant == msg.sender, "Pas l'enseignant de ce devoir");
+
         soumission.estCorrige = true;
         soumission.note = _note;
         soumission.commentaire = _commentaire;
-        
+
+        soumission.fichierCorrection.hash = _fichierCorrectionHash;
+        soumission.fichierCorrection.nom = _fichierCorrectionNom;
+        soumission.fichierCorrection.uri = _fichierCorrectionURI;
+
         emit SoumissionCorrigee(_soumissionId, _note);
     }
-    
-    // Fonction de publication d'annonce
+
+    // =========================
+    // ANNONCES
+    // =========================
+
     function publierAnnonce(
-        string memory _titre,
-        string memory _contenu,
+        string calldata _titre,
+        string calldata _contenu,
         bool _estPublique
-    ) 
-        public 
-        returns (uint256)
-    {
+    ) external returns (uint256) {
         require(
             enseignants[msg.sender].estActif || etudiants[msg.sender].estActif,
             "Seuls les membres inscrits peuvent publier"
         );
-        
+
         compteurAnnonces++;
-        
+
         annonces[compteurAnnonces] = Annonce({
             id: compteurAnnonces,
             auteur: msg.sender,
@@ -265,75 +394,60 @@ contract SystemeGestionControles {
             dateCreation: block.timestamp,
             estPublique: _estPublique
         });
-        
+
         listeAnnonces.push(compteurAnnonces);
         emit AnnoncePubliee(compteurAnnonces, msg.sender, _titre);
-        
+
         return compteurAnnonces;
     }
-    
-    // Fonctions de lecture
-    function obtenirDevoir(uint256 _devoirId) 
-        public 
-        view 
-        returns (Devoir memory) 
-    {
+
+    // =========================
+    // LECTURE
+    // =========================
+
+    function obtenirDevoir(uint256 _devoirId) external view returns (Devoir memory) {
         return devoirs[_devoirId];
     }
-    
-    function obtenirSoumission(uint256 _soumissionId) 
-        public 
-        view 
-        returns (Soumission memory) 
-    {
+
+    function obtenirSoumission(uint256 _soumissionId) external view returns (Soumission memory) {
         return soumissions[_soumissionId];
     }
-    
-    function obtenirSoumissionsDevoir(uint256 _devoirId) 
-        public 
-        view 
-        returns (uint256[] memory) 
-    {
+
+    function obtenirSoumissionsDevoir(uint256 _devoirId) external view returns (uint256[] memory) {
         return soumissionsParDevoir[_devoirId];
     }
-    
-    function obtenirSoumissionsEtudiant(address _etudiant) 
-        public 
-        view 
-        returns (uint256[] memory) 
-    {
+
+    function obtenirSoumissionsEtudiant(address _etudiant) external view returns (uint256[] memory) {
         return soumissionsParEtudiant[_etudiant];
     }
-    
-    function obtenirTousLesDevoirs() 
-        public 
-        view 
-        returns (uint256[] memory) 
-    {
+
+    function obtenirTousLesDevoirs() external view returns (uint256[] memory) {
         return listeDevoirs;
     }
-    
-    function obtenirToutesLesAnnonces() 
-        public 
-        view 
-        returns (uint256[] memory) 
-    {
-        return listeAnnonces;
-    }
-    
-    function estEnseignant(address _adresse) 
-        public 
-        view 
-        returns (bool) 
-    {
+
+    function estEnseignant(address _adresse) external view returns (bool) {
         return enseignants[_adresse].estActif;
     }
-    
-    function estEtudiant(address _adresse) 
-        public 
-        view 
-        returns (bool) 
-    {
+
+    function estEtudiant(address _adresse) external view returns (bool) {
         return etudiants[_adresse].estActif;
+    }
+
+    function obtenirNotesEtudiant(address _etudiant)
+        external
+        view
+        returns (uint256[] memory soumissionIds, uint256[] memory notes, uint256[] memory moduleIds)
+    {
+        uint256[] memory ids = soumissionsParEtudiant[_etudiant];
+        soumissionIds = new uint256[](ids.length);
+        notes = new uint256[](ids.length);
+        moduleIds = new uint256[](ids.length);
+
+        for (uint256 i = 0; i < ids.length; i++) {
+            Soumission storage s = soumissions[ids[i]];
+            soumissionIds[i] = s.id;
+            notes[i] = s.note;
+            moduleIds[i] = s.moduleId;
+        }
     }
 }
