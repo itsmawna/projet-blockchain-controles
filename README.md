@@ -324,35 +324,13 @@ Causes possibles :
 - devoir déjà soumis (protection anti double soumission)
 
 
-## 🤝 Contribution
-
-Ce projet est réalisé dans le cadre du module M356 - Fondamentaux de la Blockchain.
-
-**Auteurs :** [Noms des étudiants du groupe]  
-**Professeur :** Imad Sassi  
-**Institution :** ENSA Tétouan
-
-## 📅 Calendrier
-
-- **Date limite :** Lundi 15 Décembre 2025
-- **Durée de présentation :** 20 minutes
-  - 12 minutes : Présentation
-  - 8 minutes : Questions
-
-## 📧 Contact
-
-**Email :** i.sassi@uae.ac.ma
-
-## 📄 Licence
-
-MIT © 2025 ENSA Tétouan
 
 ---
 
 <div align="center">
 
 **Fait avec ❤️ pour l'éducation décentralisée**
-
-[Documentation](./DOCUMENTATION.md) • [Rapport](./rapport.pdf) • [Présentation](./presentation.pdf)
+Ce projet est réalisé dans le cadre du module M356 - Fondamentaux de la Blockchain.
+[Documentation](./README.md) • [Rapport](./rapport.pdf) • [Présentation](./presentation.pdf)
 
 </div>
