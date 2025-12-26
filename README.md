@@ -330,7 +330,10 @@ Causes possibles :
 <div align="center">
 
 **Fait avec ❤️ pour l'éducation décentralisée**
-Ce projet est réalisé dans le cadre du module M356 - Fondamentaux de la Blockchain.
+
 [Documentation](./README.md) • [Rapport](./rapport.pdf) • [Présentation](./presentation.pdf)
 
+</div>
+<div align="center">
+Ce projet est réalisé dans le cadre du module M356 - Fondamentaux de la Blockchain.
 </div>
