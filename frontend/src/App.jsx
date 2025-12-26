@@ -1,44 +1,36 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { ethers } from "ethers";
 import CryptoJS from "crypto-js";
 import "./styles.css";
 
 // ======================= CONFIG =======================
 const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-
-// ✅ Ton serveur upload (Express + multer)
 const FILE_API_URL = "http://localhost:5001";
 
-// ⚠️ ABI STRICTEMENT aligné avec TON contrat Solidity (v0.8.19)
-// - inscrireEnseignant(address,string,string) external
-// - creerModule(string,uint256,address) external
-// - obtenirSoumission retourne une struct imbriquée (fichier + fichierCorrection)
+// ======================= ABI =======================
+// ✅ On garde l’ABI complète utile au projet,
+// ❌ mais côté React on SUPPRIME totalement la gestion des clés étudiant (priv/pub).
 const CONTRACT_ABI = [
-  // =========================
-  // ADMIN / LECTURE ADMIN
-  // =========================
   "function administrateur() public view returns (address)",
 
-  "function inscrireEnseignant(address _adresse, string _nom, string _clePublique) external",
+  "function inscrireEnseignant(address _adresse, string _nom) external",
   "function inscrireEtudiant(address _adresse, string _nom, string _numeroEtudiant) external",
 
   "function creerModule(string _nom, uint256 _coefficient, address _enseignant) external returns (uint256)",
   "function obtenirModules() external view returns (tuple(uint256 id, string nom, uint256 coefficient, address enseignant, bool estActif)[])",
 
-  // =========================
-  // ENSEIGNANT
-  // =========================
+  "function affecterEtudiantAuModule(uint256 _moduleId, address _etudiant) external",
+  "function obtenirEtudiantsModule(uint256 _moduleId) external view returns (address[])",
+  "function estInscritDansModule(uint256 _moduleId, address _etudiant) external view returns (bool)",
+
+  "function definirClePubliqueEnseignant(string _clePublique) external",
+  // "function definirClePubliqueEtudiant(string _clePublique) external", // ❌ plus utilisé côté UI
+
   "function creerDevoir(uint256 _moduleId, string _titre, string _description, string _clePubliqueChiffrement, uint256 _dateLimite) external returns (uint256)",
   "function corrigerSoumission(uint256 _soumissionId, uint256 _note, string _commentaire, string _fichierCorrectionHash, string _fichierCorrectionNom, string _fichierCorrectionURI) external",
 
-  // =========================
-  // ÉTUDIANT
-  // =========================
   "function soumettreDevoir(uint256 _devoirId, string _contenuChiffre, string _identiteChiffree, string _fichierHash, string _fichierNom, string _fichierType, string _fichierURI, string _cleAESChiffree) external returns (uint256)",
 
-  // =========================
-  // LECTURE
-  // =========================
   "function obtenirTousLesDevoirs() external view returns (uint256[])",
 
   "function obtenirDevoir(uint256 _devoirId) external view returns (tuple(uint256 id, address enseignant, uint256 moduleId, string titre, string description, string clePubliqueChiffrement, uint256 dateCreation, uint256 dateLimite, bool estActif))",
@@ -48,37 +40,24 @@ const CONTRACT_ABI = [
   "function obtenirSoumissionsDevoir(uint256 _devoirId) external view returns (uint256[])",
   "function obtenirSoumissionsEtudiant(address _etudiant) external view returns (uint256[])",
 
-  // =========================
-  // RÔLES
-  // =========================
   "function estEnseignant(address _adresse) external view returns (bool)",
   "function estEtudiant(address _adresse) external view returns (bool)",
 
-  // =========================
-  // NOTES (3 ARRAYS)
-  // =========================
+  "function enseignants(address) external view returns (address adresse, string nom, string clePublique, bool estActif, uint256 dateInscription, uint256 moduleId)",
+  "function etudiants(address) external view returns (address adresse, string nom, string numeroEtudiant, string clePublique, bool estActif, uint256 dateInscription)",
+
   "function obtenirNotesEtudiant(address _etudiant) external view returns (uint256[] soumissionIds, uint256[] notes, uint256[] moduleIds)",
 
-  // =========================
-  // (OPTIONNEL) ANNONCES
-  // =========================
   "function publierAnnonce(string _titre, string _contenu, bool _estPublique) external returns (uint256)",
 ];
 
 // ======================= UPLOAD HELPERS =======================
 async function uploadFileToServer(fileOrBlob, filename) {
   const form = new FormData();
-  if (fileOrBlob instanceof Blob) {
-    form.append("file", fileOrBlob, filename || "encrypted.bin");
-  } else {
-    form.append("file", fileOrBlob);
-  }
+  if (fileOrBlob instanceof Blob) form.append("file", fileOrBlob, filename || "encrypted.bin");
+  else form.append("file", fileOrBlob);
 
-  const res = await fetch(`${FILE_API_URL}/upload`, {
-    method: "POST",
-    body: form,
-  });
-
+  const res = await fetch(`${FILE_API_URL}/upload`, { method: "POST", body: form });
   if (!res.ok) throw new Error("Upload échoué");
   return await res.json(); // { uri }
 }
@@ -93,7 +72,6 @@ async function fetchTextFromUri(uri) {
   return await res.text();
 }
 
-// ✅ Téléchargement générique (fichier en clair ou binaire)
 async function downloadFromUri(uri, filename) {
   const res = await fetch(uri);
   if (!res.ok) throw new Error("Téléchargement échoué");
@@ -108,14 +86,24 @@ async function downloadFromUri(uri, filename) {
   URL.revokeObjectURL(url);
 }
 
-// ✅ Copier (clé privée etc.)
+// ✅ télécharger un blob (ex: fichier déchiffré)
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "download.bin";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function copyToClipboard(text) {
   if (!text) return;
   try {
     await navigator.clipboard.writeText(text);
     alert("✅ Copié dans le presse-papiers !");
   } catch {
-    // fallback
     const ta = document.createElement("textarea");
     ta.value = text;
     document.body.appendChild(ta);
@@ -126,8 +114,22 @@ async function copyToClipboard(text) {
   }
 }
 
+async function pasteFromClipboard() {
+  try {
+    const t = await navigator.clipboard.readText();
+    return t || "";
+  } catch {
+    alert("❌ Permission presse-papiers refusée. Colle manuellement (Ctrl+V).");
+    return "";
+  }
+}
+
 // ======================= CRYPTO =======================
 class CryptoUtils {
+  static normalizeBase64(b64) {
+    return (b64 || "").replace(/\s+/g, "").trim();
+  }
+
   // RSA-OAEP 2048 via WebCrypto
   static async generateRSAKeyPair() {
     const keyPair = await window.crypto.subtle.generateKey(
@@ -155,7 +157,9 @@ class CryptoUtils {
   }
 
   static base64ToArrayBuffer(base64) {
-    const binaryString = atob(base64);
+    const b64 = this.normalizeBase64(base64);
+    if (!b64) throw new Error("Base64 vide");
+    const binaryString = atob(b64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
     return bytes.buffer;
@@ -184,30 +188,34 @@ class CryptoUtils {
   }
 
   static async rsaEncrypt(message, publicKeyBase64) {
+    const pk = this.normalizeBase64(publicKeyBase64);
+    if (!pk) throw new Error("Clé publique vide");
     const encoder = new TextEncoder();
-    const publicKey = await this.importPublicKey(publicKeyBase64);
-    const encrypted = await window.crypto.subtle.encrypt(
-      { name: "RSA-OAEP" },
-      publicKey,
-      encoder.encode(message)
-    );
+    const publicKey = await this.importPublicKey(pk);
+    const encrypted = await window.crypto.subtle.encrypt({ name: "RSA-OAEP" }, publicKey, encoder.encode(message));
     return this.arrayBufferToBase64(encrypted);
   }
 
   static async rsaDecrypt(encryptedBase64, privateKeyBase64) {
-    const privateKey = await this.importPrivateKey(privateKeyBase64);
+    const sk = this.normalizeBase64(privateKeyBase64);
+    if (!sk) throw new Error("Clé privée vide");
+
+    const ct = this.normalizeBase64(encryptedBase64);
+    if (!ct) throw new Error("Ciphertext vide");
+
+    const privateKey = await this.importPrivateKey(sk);
     const decoder = new TextDecoder();
     const decrypted = await window.crypto.subtle.decrypt(
       { name: "RSA-OAEP" },
       privateKey,
-      this.base64ToArrayBuffer(encryptedBase64)
+      this.base64ToArrayBuffer(ct)
     );
     return decoder.decode(decrypted);
   }
 
   // AES (CryptoJS)
   static generateAESKey() {
-    return CryptoJS.lib.WordArray.random(32).toString(); // 256-bit
+    return CryptoJS.lib.WordArray.random(32).toString();
   }
 
   static encryptFileContentToString(file, aesKey) {
@@ -242,6 +250,14 @@ class CryptoUtils {
   }
 }
 
+// ✅ TEST: Vérifie que la clé privée correspond à la clé publique stockée dans le DEVOIR
+async function testKeyPairWithDevoirPubKey(privateKeyBase64, devoirPubKeyBase64) {
+  const msg = "TEST_" + Date.now();
+  const enc = await CryptoUtils.rsaEncrypt(msg, devoirPubKeyBase64);
+  const dec = await CryptoUtils.rsaDecrypt(enc, privateKeyBase64);
+  return dec === msg;
+}
+
 // ======================= SIMPLE PLAGIAT =======================
 class AntiPlagiat {
   static detecter(texts) {
@@ -256,7 +272,6 @@ class AntiPlagiat {
     }
     return out;
   }
-
   static textToVector(text) {
     const mots =
       (text || "")
@@ -266,7 +281,6 @@ class AntiPlagiat {
     for (const m of mots) v[m] = (v[m] || 0) + 1;
     return v;
   }
-
   static cosine(a, b) {
     const keys = Object.keys({ ...a, ...b });
     let dot = 0,
@@ -293,7 +307,6 @@ async function sha256Hex(message) {
     .join("");
 }
 
-// ✅ SHA-256 d’un fichier (bytes)
 async function sha256FileHex(file) {
   const buffer = await file.arrayBuffer();
   const hashBuffer = await window.crypto.subtle.digest("SHA-256", buffer);
@@ -303,27 +316,26 @@ async function sha256FileHex(file) {
 }
 
 // ======================= DEVOIR ATTACHMENT PARSING =======================
-// ✅ On stocke l’upload du devoir prof dans la description (car contrat ne le supporte pas nativement)
 function parseDevoirAttachment(description) {
   const desc = description || "";
-  // Cherche les lignes "URI:" "Nom:" "Hash:" "Type:"
   const uri = (desc.match(/URI:\s*(.+)/i) || [])[1]?.trim() || "";
   const nom = (desc.match(/Nom:\s*(.+)/i) || [])[1]?.trim() || "";
   const hash = (desc.match(/Hash:\s*(.+)/i) || [])[1]?.trim() || "";
   const type = (desc.match(/Type:\s*(.+)/i) || [])[1]?.trim() || "";
-
-  // On considère "attaché" seulement si URI existe
   if (!uri) return null;
   return { uri, nom, hash, type };
 }
 
-// Nettoyer la description pour affichage (sans le bloc fichier)
 function stripAttachmentBlock(description) {
   const desc = description || "";
-  // coupe à partir de la ligne "---" si on a ajouté notre bloc
   const idx = desc.indexOf("\n\n---\n📎 FichierDevoir:");
   if (idx === -1) return desc;
   return desc.slice(0, idx).trim();
+}
+
+// ======================= LOCAL KEY STORAGE (PROF ONLY) =======================
+function getTeacherLocalKeyName(account) {
+  return `SGC_RSA_PRIV_TEACHER_${(account || "").toLowerCase()}`;
 }
 
 // ======================= APP =======================
@@ -343,13 +355,18 @@ export default function App() {
   const [studentSubmissions, setStudentSubmissions] = useState([]);
   const [studentGrades, setStudentGrades] = useState([]);
 
-  // Forms (✅ corrigé selon ton contrat: inscrireEnseignant = 3 params + creerModule séparé)
+  const [assign, setAssign] = useState({ moduleId: "", studentAddress: "" });
+  const [eligibleDevoirs, setEligibleDevoirs] = useState([]);
+
+  // ✅ NEW: modules liés à l’étudiant (pour filtrage devoirs étudiant)
+  const [studentModuleIds, setStudentModuleIds] = useState([]); // string[]
+
+  // Forms (Admin)
   const [newTeacher, setNewTeacher] = useState({
     address: "",
     nom: "",
     moduleNom: "",
     coefficient: "",
-    clePublique: "",
   });
   const [newStudent, setNewStudent] = useState({ address: "", nom: "", numero: "" });
 
@@ -376,23 +393,36 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const correctionFileRef = useRef(null);
 
-  // ✅ NOUVEAU: fichier devoir (upload prof)
   const devoirFileRef = useRef(null);
   const [devoirFile, setDevoirFile] = useState(null);
 
-  // ✅ NOUVEAU: copier/afficher clé privée générée (sans te renvoyer tout le code)
-  const [lastGeneratedKey, setLastGeneratedKey] = useState("");
-  const [lastGeneratedKeyLabel, setLastGeneratedKeyLabel] = useState("");
-  const [showLastKey, setShowLastKey] = useState(false);
+  // ✅ PROF ONLY: keys
+  const [teacherPublicKeyOnChain, setTeacherPublicKeyOnChain] = useState("");
+  const [teacherPrivateKeyLocal, setTeacherPrivateKeyLocal] = useState("");
+  const [showMyPriv, setShowMyPriv] = useState(false);
 
+  // Prof decrypt UI
   const [teacherPrivateKey, setTeacherPrivateKey] = useState("");
   const [decryptId, setDecryptId] = useState("");
   const [decryptedText, setDecryptedText] = useState("");
+
+  // ✅ NOUVEAU: garder le fichier déchiffré en mémoire pour afficher un bouton "Download"
+  const [decryptedFile, setDecryptedFile] = useState(null); // { blob, name, type }
+
   const [plagiarismResults, setPlagiarismResults] = useState([]);
+
+  // Pour afficher clé publique prof aux étudiants
+  const [selectedDevoirTeacherPubKey, setSelectedDevoirTeacherPubKey] = useState("");
 
   // ======================= ERROR HELPERS =======================
   const getEthersError = (e) =>
-    e?.reason || e?.shortMessage || e?.info?.error?.message || e?.message || "Erreur";
+    e?.reason || e?.shortMessage || e?.info?.error?.message || e?.message || e?.toString?.() || "Erreur";
+
+  const getCryptoErrorText = (e) => {
+    const name = e?.name ? `${e.name}: ` : "";
+    const msg = e?.message || e?.toString?.() || "Erreur";
+    return name + msg;
+  };
 
   // ======================= CONNECT WALLET =======================
   const connectWallet = async () => {
@@ -473,10 +503,9 @@ export default function App() {
             id: d.id.toString(),
             moduleId: d.moduleId.toString(),
             titre: d.titre,
-            // ✅ afficher description sans le bloc fichier, mais garder l’original aussi
             description: stripAttachmentBlock(d.description),
             rawDescription: d.description,
-            attachment: attach, // {uri, nom, hash, type} | null
+            attachment: attach,
             enseignant: d.enseignant,
             clePublique: d.clePubliqueChiffrement,
             dateCreation: new Date(Number(d.dateCreation) * 1000).toLocaleString(),
@@ -491,6 +520,55 @@ export default function App() {
     }
   }, [contract]);
 
+  // ✅ NEW: récupérer les moduleIds où l’étudiant est inscrit (pour filtrer page Devoirs)
+  const loadStudentModuleIds = useCallback(async () => {
+    if (!contract || !account || userRole !== "etudiant") {
+      setStudentModuleIds([]);
+      return;
+    }
+    try {
+      const checks = await Promise.all(
+        modules.map(async (m) => {
+          try {
+            const ok = await contract.estInscritDansModule(Number(m.id), account);
+            return ok ? m.id : null;
+          } catch {
+            return null;
+          }
+        })
+      );
+      setStudentModuleIds(checks.filter(Boolean));
+    } catch (e) {
+      console.error("Erreur studentModuleIds:", e);
+      setStudentModuleIds([]);
+    }
+  }, [contract, account, userRole, modules]);
+
+  const loadEligibleDevoirsForStudent = useCallback(async () => {
+    if (!contract || !account || userRole !== "etudiant") {
+      setEligibleDevoirs([]);
+      return;
+    }
+    try {
+      const checks = await Promise.all(
+        devoirs.map(async (d) => {
+          try {
+            const ok = await contract.estInscritDansModule(Number(d.moduleId), account);
+            return { d, ok };
+          } catch {
+            return { d, ok: false };
+          }
+        })
+      );
+      const filtered = checks.filter((x) => x.ok).map((x) => x.d);
+      setEligibleDevoirs(filtered);
+    } catch (e) {
+      console.error("Erreur eligible devoirs:", e);
+      setEligibleDevoirs([]);
+    }
+  }, [contract, account, userRole, devoirs]);
+
+  // ✅ FIX PROF: charger uniquement les soumissions des devoirs DU PROF (via devoir.enseignant)
   const loadTeacherSubmissions = useCallback(async () => {
     if (!contract || !account || userRole !== "enseignant") return;
     try {
@@ -502,7 +580,7 @@ export default function App() {
         for (const sid of ids) {
           const s = await contract.obtenirSoumission(sid);
 
-          // ✅ Ton contrat retourne s.fichier.* et s.fichierCorrection.*
+          // ✅ FIX IDENTITY: l’étudiant est identifié par s.etudiant (msg.sender)
           all.push({
             id: s.id.toString(),
             devoirId: s.devoirId.toString(),
@@ -556,12 +634,10 @@ export default function App() {
           note: Number(s.note),
           commentaire: s.commentaire,
 
-          // fichier côté étudiant (depuis s.fichier.*)
           fichierNom: s.fichier.nom,
           fichierType: s.fichier.fileType,
           fichierURI: s.fichier.uri,
 
-          // ✅ correction (depuis s.fichierCorrection.*)
           fichierCorrectionNom: s.fichierCorrection.nom,
           fichierCorrectionURI: s.fichierCorrection.uri,
           fichierCorrectionHash: s.fichierCorrection.hash,
@@ -590,6 +666,21 @@ export default function App() {
     }
   }, [contract, account, userRole]);
 
+  // ✅ PROF ONLY
+  const loadTeacherPublicKeyFromChain = useCallback(async () => {
+    if (!contract || !account || userRole !== "enseignant") {
+      setTeacherPublicKeyOnChain("");
+      return;
+    }
+    try {
+      const t = await contract.enseignants(account);
+      setTeacherPublicKeyOnChain(t.clePublique || "");
+    } catch (e) {
+      console.error("Erreur loadTeacherPublicKeyFromChain:", e);
+      setTeacherPublicKeyOnChain("");
+    }
+  }, [contract, account, userRole]);
+
   // ======================= MOYENNE PONDÉRÉE =======================
   const calculerMoyennePonderee = () => {
     if (!studentGrades.length) return "0.00";
@@ -614,46 +705,24 @@ export default function App() {
   };
 
   // ======================= ADMIN ACTIONS =======================
-  const handleGenerateTeacherKeys = async () => {
-    try {
-      const keys = await CryptoUtils.generateRSAKeyPair();
-      setNewTeacher((t) => ({ ...t, clePublique: keys.publicKey }));
-
-      // ✅ on stocke la clé privée pour la copier facilement
-      setLastGeneratedKey(keys.privateKey);
-      setLastGeneratedKeyLabel("Clé PRIVÉE RSA (enseignant)");
-      setShowLastKey(true);
-
-      alert(
-        `✅ Clés RSA générées\n\n🔑 Clé PRIVÉE (à donner UNIQUEMENT au prof):\n${keys.privateKey}\n\n✅ Clé PUBLIQUE mise dans le formulaire.\n\n➡️ Tu peux aussi la copier dans l’onglet Profil (bouton Copier).`
-      );
-    } catch (e) {
-      console.error(e);
-      alert("Erreur génération clés RSA: " + getEthersError(e));
-    }
-  };
-
-  // ✅ CORRECTION: inscription prof = 3 params + création module séparée (2 tx)
   const inscrireEnseignant = async () => {
     if (!contract || userRole !== "admin") return alert("Admin seulement");
 
-    const { address, nom, moduleNom, coefficient, clePublique } = newTeacher;
+    const { address, nom, moduleNom, coefficient } = newTeacher;
 
-    if (!address || !nom || !moduleNom || coefficient === "" || !clePublique) {
-      return alert("Remplis: adresse, nom, nom du module, coefficient, clé publique");
+    if (!address || !nom || !moduleNom || coefficient === "") {
+      return alert("Remplis: adresse, nom, nom du module, coefficient");
     }
 
     try {
-      // 1) inscrire enseignant
-      const tx1 = await contract.inscrireEnseignant(address, nom, clePublique);
+      const tx1 = await contract.inscrireEnseignant(address, nom);
       await tx1.wait();
 
-      // 2) créer module et l’attacher au prof
       const tx2 = await contract.creerModule(moduleNom, Number(coefficient), address);
       await tx2.wait();
 
       alert("✅ Enseignant inscrit + module créé !");
-      setNewTeacher({ address: "", nom: "", moduleNom: "", coefficient: "", clePublique: "" });
+      setNewTeacher({ address: "", nom: "", moduleNom: "", coefficient: "" });
       await loadModules();
     } catch (e) {
       console.error(e);
@@ -676,22 +745,91 @@ export default function App() {
     }
   };
 
-  // ======================= ENSEIGNANT: CRÉER DEVOIR (+ upload fichier) =======================
+  const affecterEtudiant = async () => {
+    if (!contract || userRole !== "admin") return alert("Admin seulement");
+    if (!assign.moduleId || !assign.studentAddress) return alert("Choisis module + adresse étudiant");
+    try {
+      const tx = await contract.affecterEtudiantAuModule(Number(assign.moduleId), assign.studentAddress);
+      await tx.wait();
+      alert("✅ Étudiant affecté au module !");
+      setAssign({ moduleId: "", studentAddress: "" });
+      // refresh
+      await loadStudentModuleIds();
+      await loadEligibleDevoirsForStudent();
+    } catch (e) {
+      console.error(e);
+      alert("Erreur affectation: " + getEthersError(e));
+    }
+  };
+
+  // ======================= PROFIL (PROF ONLY): KEYS =======================
+  const loadTeacherPrivateKeyLocal = useCallback(() => {
+    if (!account || userRole !== "enseignant") return setTeacherPrivateKeyLocal("");
+    const key = localStorage.getItem(getTeacherLocalKeyName(account)) || "";
+    setTeacherPrivateKeyLocal(key);
+  }, [account, userRole]);
+
+  const saveTeacherPrivateKeyLocal = useCallback(
+    (priv) => {
+      if (!account || userRole !== "enseignant") return;
+      localStorage.setItem(getTeacherLocalKeyName(account), priv || "");
+      setTeacherPrivateKeyLocal(priv || "");
+    },
+    [account, userRole]
+  );
+
+  const generateAndRegisterTeacherKeys = async () => {
+    if (!contract || !account) return alert("Connecte le wallet d'abord");
+    if (userRole !== "enseignant") return alert("Seul l’enseignant gère les clés RSA dans cette version.");
+
+    try {
+      const keys = await CryptoUtils.generateRSAKeyPair();
+      saveTeacherPrivateKeyLocal(keys.privateKey);
+
+      const tx = await contract.definirClePubliqueEnseignant(keys.publicKey);
+      await tx.wait();
+
+      await loadTeacherPublicKeyFromChain();
+
+      alert(
+        "✅ Clés PROF générées !\n\n🔐 Clé privée stockée localement.\n🔓 Clé publique enregistrée sur la blockchain.\n\n⚠️ Utilise cette clé privée pour déchiffrer les soumissions."
+      );
+    } catch (e) {
+      console.error(e);
+      alert("Erreur génération/enregistrement clés (prof): " + getEthersError(e));
+    }
+  };
+
+  const pushPublicKeyOnly = async () => {
+    const pk = (teacherPublicKeyOnChain || "").trim();
+    if (!pk) return alert("Clé publique vide. Génère des clés d'abord.");
+    alert("✅ Ta clé publique prof est bien disponible on-chain.");
+  };
+
+  // ======================= ENSEIGNANT: CRÉER DEVOIR =======================
   const creerDevoir = async () => {
     if (!contract || userRole !== "enseignant") return alert("Enseignant seulement");
     if (!newDevoir.moduleId || !newDevoir.titre || !newDevoir.description || !newDevoir.dateLimite) {
       return alert("Remplis tous les champs + sélectionne module");
     }
 
+    const profPublicKey = (teacherPublicKeyOnChain || "").trim();
+    if (!profPublicKey) {
+      return alert("⚠️ Ta clé publique prof est vide.\nVa dans Profil → Générer & enregistrer (clé publique on-chain).");
+    }
+
+    // ✅ FIX: un prof ne peut créer que dans ses modules
+    const moduleOk = modules.some(
+      (m) => m.id === String(newDevoir.moduleId) && m.enseignant.toLowerCase() === account.toLowerCase()
+    );
+    if (!moduleOk) return alert("❌ Tu ne peux créer un devoir que dans tes propres modules.");
+
     try {
-      const keys = await CryptoUtils.generateRSAKeyPair();
       const dateLimiteTimestamp = Math.floor(new Date(newDevoir.dateLimite).getTime() / 1000);
       if (Number.isNaN(dateLimiteTimestamp) || dateLimiteTimestamp <= Math.floor(Date.now() / 1000)) {
         return alert("Date limite doit être dans le futur");
       }
 
-      // ✅ 1) Upload d’un fichier devoir (PDF/Doc…) par le prof (en clair) — stocké hors chaîne
-      // Comme ton contrat n’a pas de champ fichierDevoir, on l’encode dans "description".
       let finalDescription = newDevoir.description;
 
       if (devoirFile) {
@@ -709,48 +847,43 @@ export default function App() {
           `URI: ${up.uri}\n`;
       }
 
-      // ✅ 2) Création on-chain
       const tx = await contract.creerDevoir(
         Number(newDevoir.moduleId),
         newDevoir.titre,
         finalDescription,
-        keys.publicKey,
+        profPublicKey,
         dateLimiteTimestamp
       );
       await tx.wait();
 
-      // ✅ stocker clé privée pour copier plus facilement
-      setLastGeneratedKey(keys.privateKey);
-      setLastGeneratedKeyLabel(`Clé PRIVÉE RSA (devoir: ${newDevoir.titre})`);
-      setShowLastKey(true);
-
-      alert(
-        `✅ Devoir créé !\n\n🔑 IMPORTANT: ta clé PRIVÉE RSA (garde-la):\n${keys.privateKey}\n\n➡️ Tu peux aussi la copier dans l’onglet Profil (bouton Copier).\n\nElle sert à déchiffrer soumissions + clés AES des fichiers.`
-      );
+      alert("✅ Devoir créé !\n\n🔓 Les étudiants chiffreront avec TA clé publique.\n🔐 Tu déchiffreras avec TA clé privée (Profil).");
 
       setNewDevoir({ moduleId: "", titre: "", description: "", dateLimite: "" });
       setDevoirFile(null);
       if (devoirFileRef.current) devoirFileRef.current.value = "";
+
       await loadDevoirs();
+      await loadTeacherSubmissions();
     } catch (e) {
       console.error(e);
       alert("Erreur création devoir: " + getEthersError(e));
     }
   };
 
-  // ======================= ÉTUDIANT: SOUMETTRE (TEXTE + FICHIER) =======================
+  // ======================= ÉTUDIANT: SOUMETTRE =======================
   const soumettreDevoir = async () => {
     if (!contract || userRole !== "etudiant") return alert("Étudiant seulement");
-    const devoir = devoirs.find((d) => d.id === newSoumission.devoirId);
-    if (!devoir) return alert("Devoir introuvable");
+    const devoir = eligibleDevoirs.find((d) => d.id === newSoumission.devoirId);
+    if (!devoir) return alert("Devoir introuvable (ou pas inscrit au module)");
     if (!newSoumission.identite || !newSoumission.reponse) return alert("Identité + réponse obligatoires");
 
-    try {
-      // 1) chiffrer la réponse & identité (RSA avec clé publique devoir)
-      const reponseChiffree = await CryptoUtils.rsaEncrypt(newSoumission.reponse, devoir.clePublique);
-      const identiteChiffree = await CryptoUtils.rsaEncrypt(newSoumission.identite, devoir.clePublique);
+    const pubKey = (devoir.clePublique || "").trim();
+    if (!pubKey) return alert("⚠️ Clé publique du prof/devoir vide. Le prof doit définir sa clé publique (Profil).");
 
-      // 2) fichier optionnel (AES + upload + RSA(aesKey))
+    try {
+      const reponseChiffree = await CryptoUtils.rsaEncrypt(newSoumission.reponse, pubKey);
+      const identiteChiffree = await CryptoUtils.rsaEncrypt(newSoumission.identite, pubKey);
+
       let fichierHash = "";
       let fichierNom = "";
       let fichierType = "";
@@ -769,10 +902,10 @@ export default function App() {
         const up = await uploadFileToServer(encBlob, `enc_${Date.now()}_${fileData.name}.bin`);
         fichierURI = up.uri;
 
-        cleAESChiffree = await CryptoUtils.rsaEncrypt(aesKey, devoir.clePublique);
+        cleAESChiffree = await CryptoUtils.rsaEncrypt(aesKey, pubKey);
       }
 
-      // 3) blockchain
+      // ✅ FIX IDENTITY ON-CHAIN: l’adresse de l’étudiant est msg.sender dans le smart contract
       const tx = await contract.soumettreDevoir(
         Number(newSoumission.devoirId),
         reponseChiffree,
@@ -788,46 +921,97 @@ export default function App() {
       alert("✅ Soumission envoyée !");
       setNewSoumission({ devoirId: "", identite: "", reponse: "" });
       setSelectedFile(null);
+
       await loadStudentSubmissions();
+      await loadStudentGrades();
     } catch (e) {
       console.error(e);
       alert("Erreur soumission: " + getEthersError(e));
     }
   };
 
-  // ======================= ENSEIGNANT: DÉCHIFFRER TEXTE + TÉLÉCHARGER FICHIER =======================
+  // ======================= ENSEIGNANT: DÉCHIFFRER =======================
   const decrypterSoumission = async (soumissionId) => {
-    if (!teacherPrivateKey) return alert("Colle ta clé privée RSA");
+    setDecryptedFile(null);
+
+    const sk = (teacherPrivateKey || "").trim();
+    if (!sk) return alert("Colle ta clé privée RSA (celle du Profil)");
     const s = teacherSubmissions.find((x) => x.id === String(soumissionId));
     if (!s) return alert("Soumission introuvable");
 
+    const devoir = devoirs.find((d) => d.id === String(s.devoirId));
+    const devoirPubKey = (devoir?.clePublique || "").trim();
+    if (!devoirPubKey) {
+      return alert("⚠️ Clé publique du devoir introuvable/vide.\n➡️ Recharge les devoirs, ou vérifie la création du devoir.");
+    }
+
     try {
-      const contenu = await CryptoUtils.rsaDecrypt(s.contenuChiffre, teacherPrivateKey);
-      const identite = await CryptoUtils.rsaDecrypt(s.identiteChiffree, teacherPrivateKey);
+      const ok = await testKeyPairWithDevoirPubKey(sk, devoirPubKey);
+      if (!ok) {
+        alert(
+          "❌ Ta clé privée NE correspond PAS à la clé publique stockée dans ce devoir.\n\n" +
+            "Ca arrive si :\n" +
+            "- tu as régénéré tes clés après avoir créé le devoir\n" +
+            "- ou le devoir a été créé avant de définir la clé publique prof\n\n" +
+            "➡️ Solution sûre : Profil (garder la même clé privée) puis recréer le devoir et refaire une soumission."
+        );
+        return;
+      }
+    } catch (e) {
+      console.error(e);
+      alert(
+        "❌ Test clé privée/clé publique impossible : " +
+          getCryptoErrorText(e) +
+          "\n\n➡️ Vérifie que tu as collé une clé privée PKCS8 base64 complète (sans espaces)."
+      );
+      return;
+    }
+
+    try {
+      const contenu = await CryptoUtils.rsaDecrypt(s.contenuChiffre, sk);
+      const identite = await CryptoUtils.rsaDecrypt(s.identiteChiffree, sk);
 
       let fileInfo = "";
       if (s.fichierURI && s.cleAESChiffree) {
-        const aesKey = await CryptoUtils.rsaDecrypt(s.cleAESChiffree, teacherPrivateKey);
+        const aesKey = await CryptoUtils.rsaDecrypt(s.cleAESChiffree, sk);
         const encString = await fetchTextFromUri(s.fichierURI);
         const bytes = CryptoUtils.decryptAesStringToBytes(encString, aesKey);
 
         const blob = new Blob([bytes], { type: s.fichierType || "application/octet-stream" });
-        const url = URL.createObjectURL(blob);
+        setDecryptedFile({
+          blob,
+          name: s.fichierNom || "soumission.bin",
+          type: s.fichierType || "application/octet-stream",
+        });
 
-        fileInfo = `\n\n📎 Fichier: ${s.fichierNom}\n✅ Déchiffré (clique pour télécharger):\n${url}\n`;
+        fileInfo =
+          `\n\n📎 Fichier: ${s.fichierNom}\n` + `✅ Déchiffré: prêt à télécharger via le bouton ci-dessous.\n`;
       }
 
-      setDecryptedText(`👤 Identité: ${identite}\n\n📄 Réponse:\n${contenu}${fileInfo}`);
+      // ✅ FIX: on affiche clairement l’adresse Ethereum de l’étudiant qui a soumis
+      setDecryptedText(
+        `👤 Identité (chiffrée → déchiffrée): ${identite}\n` +
+          `🧾 Adresse Ethereum (ON-CHAIN): ${s.etudiant}\n\n` +
+          `📄 Réponse:\n${contenu}${fileInfo}`
+      );
     } catch (e) {
       console.error(e);
-      alert("Erreur déchiffrement: " + getEthersError(e));
+      alert(
+        "Erreur déchiffrement: " +
+          getCryptoErrorText(e) +
+          "\n\n✅ Vérifie que:\n- tu utilises la clé privée du PROF (Profil)\n- la clé collée ne contient pas d'espaces/retours\n- le devoir a été créé APRÈS avoir défini la clé publique prof\n- tu n'as pas régénéré les clés après création du devoir"
+      );
     }
   };
 
-  // ======================= ENSEIGNANT: CORRIGER + UPLOAD FICHIER CORRECTION =======================
+  // ======================= ENSEIGNANT: CORRIGER =======================
   const corrigerSoumission = async () => {
     if (!contract || userRole !== "enseignant") return alert("Enseignant seulement");
     if (!correction.soumissionId || correction.note === "") return alert("ID soumission + note obligatoires");
+
+    // ✅ FIX: empêcher un prof de corriger une soumission qui n’est pas à lui
+    const target = teacherSubmissions.find((s) => s.id === String(correction.soumissionId));
+    if (!target) return alert("❌ Tu ne peux corriger que les soumissions de TES devoirs (charge tes soumissions).");
 
     try {
       let corrHash = "";
@@ -847,6 +1031,7 @@ export default function App() {
         corrURI = up.uri;
       }
 
+      // ✅ FIX: la correction est liée à la SOUMISSION (donc à l’étudiant spécifique automatiquement)
       const tx = await contract.corrigerSoumission(
         Number(correction.soumissionId),
         Number(correction.note),
@@ -857,7 +1042,7 @@ export default function App() {
       );
       await tx.wait();
 
-      alert("✅ Correction enregistrée !");
+      alert(`✅ Correction enregistrée pour l’étudiant: ${target.etudiant}`);
       setCorrection({ soumissionId: "", note: "", commentaire: "" });
       if (correctionFileRef.current) correctionFileRef.current.value = "";
 
@@ -871,11 +1056,6 @@ export default function App() {
   };
 
   // ======================= ÉTUDIANT: TÉLÉCHARGER CORRECTION =======================
-  // ⚠️ Dans TON contrat, le fichier correction est stocké comme URI + hash + nom, MAIS
-  // tu l’uploades chiffré AES et tu ne stockes PAS la clé AES => l’étudiant ne peut pas déchiffrer.
-  // ✅ Ici on propose 2 modes:
-  // - Mode actuel: téléchargement du fichier tel quel (chiffré) (utile si tu changes plus tard la clé)
-  // - Option future: uploader la correction en clair OU ajouter une clé AES pour l’étudiant.
   const telechargerFichierCorrection = async (uri, nom) => {
     if (!uri) return alert("Aucun fichier correction");
     try {
@@ -888,14 +1068,15 @@ export default function App() {
 
   // ======================= ENSEIGNANT: ANTI-PLAGIAT =======================
   const analyserPlagiat = async () => {
-    if (!teacherPrivateKey) return alert("Colle ta clé privée RSA");
+    const sk = (teacherPrivateKey || "").trim();
+    if (!sk) return alert("Colle ta clé privée RSA (Profil)");
     if (!teacherSubmissions.length) return alert("Aucune soumission chargée");
 
     try {
       const textes = [];
       for (const s of teacherSubmissions) {
         try {
-          const t = await CryptoUtils.rsaDecrypt(s.contenuChiffre, teacherPrivateKey);
+          const t = await CryptoUtils.rsaDecrypt(s.contenuChiffre, sk);
           textes.push(t);
         } catch {
           textes.push("");
@@ -903,7 +1084,7 @@ export default function App() {
       }
       const results = AntiPlagiat.detecter(textes.filter(Boolean));
       setPlagiarismResults(results);
-      if (!results.length) alert("✅ Aucun plagiat détecté (selon ce test simple).");
+      if (!results.length) alert("✅ Aucun plagiat détecté (test simple).");
     } catch (e) {
       console.error(e);
       alert("Erreur analyse plagiat: " + getEthersError(e));
@@ -920,6 +1101,29 @@ export default function App() {
   useEffect(() => {
     if (!contract || !account) return;
 
+    // ✅ Clés: prof only
+    if (userRole === "enseignant") {
+      loadTeacherPublicKeyFromChain();
+      loadTeacherPrivateKeyLocal();
+    } else {
+      setTeacherPublicKeyOnChain("");
+      setTeacherPrivateKeyLocal("");
+      setTeacherPrivateKey("");
+      setShowMyPriv(false);
+    }
+  }, [contract, account, userRole, loadTeacherPublicKeyFromChain, loadTeacherPrivateKeyLocal]);
+
+  useEffect(() => {
+    loadEligibleDevoirsForStudent();
+  }, [loadEligibleDevoirsForStudent]);
+
+  useEffect(() => {
+    loadStudentModuleIds();
+  }, [loadStudentModuleIds]);
+
+  useEffect(() => {
+    if (!contract || !account) return;
+
     if (activeTab === "corriger" && userRole === "enseignant") loadTeacherSubmissions();
     if (activeTab === "antiplagiat" && userRole === "enseignant") loadTeacherSubmissions();
     if (activeTab === "soumettre" && userRole === "etudiant") loadStudentSubmissions();
@@ -927,18 +1131,54 @@ export default function App() {
       loadStudentGrades();
       loadStudentSubmissions();
     }
-  }, [
-    activeTab,
-    userRole,
-    contract,
-    account,
-    loadTeacherSubmissions,
-    loadStudentSubmissions,
-    loadStudentGrades,
-  ]);
+  }, [activeTab, userRole, contract, account, loadTeacherSubmissions, loadStudentSubmissions, loadStudentGrades]);
 
   // ======================= UI HELPERS =======================
   const shortAddr = (a) => (a ? `${a.substring(0, 6)}...${a.substring(a.length - 4)}` : "");
+
+  // STUDENT: show teacher public key for chosen devoir (info)
+  useEffect(() => {
+    const run = async () => {
+      if (!contract || userRole !== "etudiant" || !newSoumission.devoirId) {
+        setSelectedDevoirTeacherPubKey("");
+        return;
+      }
+      const d = eligibleDevoirs.find((x) => x.id === newSoumission.devoirId);
+      if (!d) {
+        setSelectedDevoirTeacherPubKey("");
+        return;
+      }
+      try {
+        const t = await contract.enseignants(d.enseignant);
+        setSelectedDevoirTeacherPubKey(t.clePublique || "");
+      } catch {
+        setSelectedDevoirTeacherPubKey("");
+      }
+    };
+    run();
+  }, [contract, userRole, newSoumission.devoirId, eligibleDevoirs]);
+
+  // ✅ FIX 1 & 2 : Filtrage devoirs selon le rôle (page Devoirs)
+  const devoirsVisibles = useMemo(() => {
+    if (!account) return [];
+    if (userRole === "enseignant") {
+      return devoirs.filter((d) => d.enseignant.toLowerCase() === account.toLowerCase());
+    }
+    if (userRole === "etudiant") {
+      // on utilise studentModuleIds (plus rapide) si dispo, sinon eligibleDevoirs fallback
+      if (studentModuleIds.length) return devoirs.filter((d) => studentModuleIds.includes(String(d.moduleId)));
+      return eligibleDevoirs; // fallback
+    }
+    // admin / non-inscrit: afficher tout
+    return devoirs;
+  }, [devoirs, eligibleDevoirs, userRole, account, studentModuleIds]);
+
+  // ✅ FIX 1 : modules visibles pour prof
+  const modulesVisibles = useMemo(() => {
+    if (!account) return [];
+    if (userRole === "enseignant") return modules.filter((m) => m.enseignant.toLowerCase() === account.toLowerCase());
+    return modules;
+  }, [modules, userRole, account]);
 
   // ======================= RENDER =======================
   return (
@@ -1036,12 +1276,12 @@ export default function App() {
                   <h2 className="section-title">📊 Dashboard</h2>
                   <div className="stats-grid">
                     <div className="stat-card">
-                      <div className="stat-number">{devoirs.length}</div>
-                      <div className="stat-label">Devoirs</div>
+                      <div className="stat-number">{devoirsVisibles.length}</div>
+                      <div className="stat-label">Devoirs visibles</div>
                     </div>
                     <div className="stat-card blue">
-                      <div className="stat-number">{modules.length}</div>
-                      <div className="stat-label">Modules</div>
+                      <div className="stat-number">{modulesVisibles.length}</div>
+                      <div className="stat-label">Modules visibles</div>
                     </div>
                     <div className="stat-card success">
                       <div className="stat-icon">🔐</div>
@@ -1058,40 +1298,46 @@ export default function App() {
                   <h3 className="section-subtitle">ℹ️ Infos</h3>
                   <ul className="info-list">
                     <li>
-                      <span className="check-icon">✓</span> Réponses chiffrées RSA (clé publique du prof).
+                      <span className="check-icon">✓</span> Les devoirs utilisent la clé publique du PROF (Profil).
                     </li>
                     <li>
-                      <span className="check-icon">✓</span> Fichiers chiffrés AES + clé AES chiffrée RSA.
+                      <span className="check-icon">✓</span> L’étudiant chiffre uniquement avec la clé publique du prof (pas de clés étudiant).
                     </li>
                     <li>
-                      <span className="check-icon">✓</span> URI fichier = stockage hors-chaîne (serveur local).
+                      <span className="check-icon">✓</span> L’adresse Ethereum de l’étudiant (msg.sender) identifie chaque soumission.
                     </li>
                     <li>
-                      <span className="check-icon">✓</span> Notes + moyenne pondérée par coefficient.
-                    </li>
-                    <li>
-                      <span className="check-icon">✓</span> Inscription prof = 2 transactions (inscrire + créer module).
-                    </li>
-                    <li>
-                      <span className="check-icon">✓</span> ✅ Nouveau: le prof peut uploader un fichier devoir (PDF) (URI encodée dans description).
-                    </li>
-                    <li>
-                      <span className="check-icon">✓</span> ✅ Nouveau: bouton Copier pour la clé privée RSA (profil).
+                      <span className="check-icon">✓</span> Correction liée à la soumission → donc à l’étudiant spécifique.
                     </li>
                   </ul>
                 </div>
               </div>
             )}
 
-            {/* DEVOIRS */}
+            {/* DEVOIRS (FILTRÉ ROLE) */}
             {activeTab === "devoirs" && (
               <div className="devoirs-list card">
-                <h2 className="section-title">📝 Liste des devoirs</h2>
-                {devoirs.length === 0 ? (
-                  <p className="empty-state">Aucun devoir.</p>
+                <h2 className="section-title">📝 Devoirs</h2>
+
+                <div className="info-box" style={{ marginBottom: 12 }}>
+                  {userRole === "enseignant" && (
+                    <>
+                      👨‍🏫 Vous voyez uniquement <b>vos devoirs</b> (enseignant = wallet connecté).
+                    </>
+                  )}
+                  {userRole === "etudiant" && (
+                    <>
+                      👨‍🎓 Vous voyez uniquement les devoirs des <b>modules où vous êtes inscrit</b>.
+                    </>
+                  )}
+                  {userRole === "admin" && <>👑 Admin : vous voyez tous les devoirs.</>}
+                </div>
+
+                {devoirsVisibles.length === 0 ? (
+                  <p className="empty-state">Aucun devoir visible.</p>
                 ) : (
                   <div className="devoirs-grid">
-                    {devoirs.map((d) => {
+                    {devoirsVisibles.map((d) => {
                       const mod = modules.find((m) => m.id === d.moduleId);
                       return (
                         <div key={d.id} className="devoir-card card">
@@ -1102,7 +1348,6 @@ export default function App() {
 
                           <p className="devoir-desc">{d.description}</p>
 
-                          {/* ✅ afficher fichier devoir si dispo */}
                           {d.attachment?.uri && (
                             <div className="info-box" style={{ marginTop: 10 }}>
                               <div style={{ opacity: 0.9 }}>
@@ -1156,7 +1401,6 @@ export default function App() {
                 <h2 className="section-title">⚙️ Admin</h2>
 
                 <div className="admin-grid">
-                  {/* Enseignant */}
                   <div className="admin-form">
                     <h3 className="form-title">👨‍🏫 Inscrire enseignant</h3>
                     <div className="form-group">
@@ -1187,28 +1431,16 @@ export default function App() {
                         onChange={(e) => setNewTeacher((t) => ({ ...t, coefficient: e.target.value }))}
                       />
 
-                      <textarea
-                        className="input-glass textarea-large"
-                        placeholder="Clé publique RSA (base64 SPKI)"
-                        value={newTeacher.clePublique}
-                        onChange={(e) => setNewTeacher((t) => ({ ...t, clePublique: e.target.value }))}
-                      />
-
-                      <button className="btn-primary" onClick={handleGenerateTeacherKeys}>
-                        🔑 Générer clés RSA
-                      </button>
-
                       <button className="btn-success" onClick={inscrireEnseignant}>
                         💾 Inscrire enseignant + module
                       </button>
 
                       <div className="warning-box">
-                        ⚠️ Ton contrat fait: inscrireEnseignant() puis creerModule() (2 transactions).
+                        ✅ Le prof définira sa clé publique dans <b>Profil</b>.
                       </div>
                     </div>
                   </div>
 
-                  {/* Étudiant */}
                   <div className="admin-form">
                     <h3 className="form-title">👨‍🎓 Inscrire étudiant</h3>
                     <div className="form-group">
@@ -1233,7 +1465,42 @@ export default function App() {
                       <button className="btn-success" onClick={inscrireEtudiant}>
                         💾 Inscrire étudiant
                       </button>
+
+                      <div className="warning-box">
+                        ✅ Étudiant : pas de clés RSA à gérer dans cette version (chiffrement uniquement avec la clé publique du prof).
+                      </div>
                     </div>
+                  </div>
+                </div>
+
+                <div className="card" style={{ marginTop: 14 }}>
+                  <h3 className="section-subtitle">📚 Affecter un étudiant à un module</h3>
+                  <div className="form-group">
+                    <label className="form-label">Module</label>
+                    <select
+                      className="input-glass select-large"
+                      value={assign.moduleId}
+                      onChange={(e) => setAssign((a) => ({ ...a, moduleId: e.target.value }))}
+                    >
+                      <option value="">-- Choisir --</option>
+                      {modules.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.nom} (ID {m.id}) — {shortAddr(m.enseignant)}
+                        </option>
+                      ))}
+                    </select>
+
+                    <label className="form-label">Adresse étudiant</label>
+                    <input
+                      className="input-glass"
+                      placeholder="0x..."
+                      value={assign.studentAddress}
+                      onChange={(e) => setAssign((a) => ({ ...a, studentAddress: e.target.value }))}
+                    />
+
+                    <button className="btn-primary" onClick={affecterEtudiant}>
+                      ✅ Affecter
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1262,26 +1529,24 @@ export default function App() {
               </div>
             )}
 
-            {/* CREER DEVOIR */}
+            {/* CREER */}
             {activeTab === "creer" && userRole === "enseignant" && (
               <div className="create-form card">
                 <h2 className="section-title">➕ Créer devoir</h2>
 
                 <div className="form-group large">
-                  <label className="form-label">Module</label>
+                  <label className="form-label">Module (uniquement tes modules)</label>
                   <select
                     className="input-glass select-large"
                     value={newDevoir.moduleId}
                     onChange={(e) => setNewDevoir((d) => ({ ...d, moduleId: e.target.value }))}
                   >
                     <option value="">-- Choisir un module --</option>
-                    {modules
-                      .filter((m) => m.enseignant.toLowerCase() === account.toLowerCase())
-                      .map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.nom} (ID {m.id})
-                        </option>
-                      ))}
+                    {modulesVisibles.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.nom} (ID {m.id})
+                      </option>
+                    ))}
                   </select>
 
                   <label className="form-label">Titre</label>
@@ -1300,8 +1565,7 @@ export default function App() {
                     placeholder="Consignes..."
                   />
 
-                  {/* ✅ NOUVEAU: upload fichier devoir */}
-                  <label className="form-label">📎 Fichier devoir (PDF/Doc…) (optionnel)</label>
+                  <label className="form-label">📎 Fichier devoir (optionnel)</label>
                   <input
                     ref={devoirFileRef}
                     className="file-input"
@@ -1324,13 +1588,15 @@ export default function App() {
                   />
 
                   <button className="btn-primary btn-large" onClick={creerDevoir}>
-                    🔐 Créer (RSA + upload devoir)
+                    🔐 Créer (utilise clé publique PROF)
                   </button>
 
-                  <div className="warning-box">
-                    ⚠️ Une paire RSA est générée. Garde la clé PRIVÉE pour déchiffrer.
+                  <div className="info-box">
+                    ✅ Les étudiants chiffrent avec ta clé publique (Profil).
                     <br />
-                    ✅ Si tu ajoutes un fichier devoir, il est uploadé hors-chaîne et encodé dans la description.
+                    🔐 Tu déchiffres avec ta clé privée (Profil).
+                    <br />
+                    ❌ Pas de clés RSA côté étudiant dans cette version.
                   </div>
                 </div>
               </div>
@@ -1339,14 +1605,14 @@ export default function App() {
             {/* CORRIGER */}
             {activeTab === "corriger" && userRole === "enseignant" && (
               <div className="card">
-                <h2 className="section-title">🧾 Corriger</h2>
+                <h2 className="section-title">🧾 Corriger (uniquement tes devoirs)</h2>
 
                 <button className="btn-primary" onClick={loadTeacherSubmissions}>
                   🔄 Charger mes soumissions
                 </button>
 
                 <div style={{ marginTop: 12 }} className="form-group">
-                  <label className="form-label">🔑 Clé privée RSA (prof)</label>
+                  <label className="form-label">🔑 Clé privée RSA (prof) — utiliser celle du Profil</label>
                   <input
                     className="input-glass input-private-key"
                     type="password"
@@ -1355,19 +1621,31 @@ export default function App() {
                     onChange={(e) => setTeacherPrivateKey(e.target.value)}
                   />
                   <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
-                    <button
-                      className="btn-info"
-                      onClick={() => copyToClipboard(teacherPrivateKey)}
-                      disabled={!teacherPrivateKey}
-                    >
-                      📋 Copier ma clé collée
+                    <button className="btn-info" onClick={() => copyToClipboard(teacherPrivateKey)} disabled={!teacherPrivateKey}>
+                      📋 Copier
                     </button>
                     <button
-                      className="btn-warning"
-                      onClick={() => setTeacherPrivateKey("")}
-                      disabled={!teacherPrivateKey}
+                      className="btn-primary"
+                      onClick={async () => {
+                        const t = await pasteFromClipboard();
+                        if (t) setTeacherPrivateKey(t);
+                      }}
                     >
-                      🧹 Vider le champ
+                      📥 Coller
+                    </button>
+                    <button className="btn-warning" onClick={() => setTeacherPrivateKey("")} disabled={!teacherPrivateKey}>
+                      🧹 Vider
+                    </button>
+
+                    <button
+                      className="btn-success"
+                      onClick={() => {
+                        if (!teacherPrivateKeyLocal) return alert("Ta clé privée locale est vide. Va dans Profil → Générer & enregistrer.");
+                        setTeacherPrivateKey(teacherPrivateKeyLocal);
+                        alert("✅ Clé privée (Profil) chargée automatiquement !");
+                      }}
+                    >
+                      ⚡ Utiliser ma clé privée (Profil)
                     </button>
                   </div>
                 </div>
@@ -1392,7 +1670,7 @@ export default function App() {
 
                         <div className="soumission-meta">
                           <div className="meta-item">
-                            <span className="meta-label">👤 Étudiant:</span>
+                            <span className="meta-label">👤 Étudiant (adresse):</span>
                             <span>{shortAddr(s.etudiant)}</span>
                           </div>
                           <div className="meta-item">
@@ -1412,30 +1690,47 @@ export default function App() {
                           </p>
                         )}
 
-                        {s.fichierCorrectionURI && (
-                          <p className="devoir-desc">
-                            <strong>✅ Correction déposée:</strong> {s.fichierCorrectionNom} —{" "}
-                            <span style={{ opacity: 0.8 }}>{s.fichierCorrectionURI}</span>
-                          </p>
-                        )}
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                          <button className="btn-info" onClick={() => decrypterSoumission(s.id)}>
+                            🔓 Déchiffrer
+                          </button>
 
-                        <button className="btn-info" onClick={() => decrypterSoumission(s.id)}>
-                          🔓 Déchiffrer cette soumission
-                        </button>
+                          {/* ✅ FIX 4: lien correction -> soumission -> étudiant spécifique */}
+                          <button
+                            className="btn-success"
+                            onClick={() => {
+                              setCorrection((c) => ({ ...c, soumissionId: s.id }));
+                              setActiveTab("corriger");
+                              alert(`✅ ID soumission pré-rempli: ${s.id}\nÉtudiant: ${s.etudiant}`);
+                            }}
+                          >
+                            ✍️ Corriger cette soumission
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
                 )}
 
+                {/* Après déchiffrement */}
                 {decryptedText && (
                   <div className="decrypted-content">
                     <h3>📄 Contenu déchiffré</h3>
                     <pre style={{ whiteSpace: "pre-wrap" }}>{decryptedText}</pre>
+
+                    {decryptedFile?.blob && (
+                      <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <button className="btn-success" onClick={() => downloadBlob(decryptedFile.blob, decryptedFile.name)}>
+                          ⬇️ Télécharger fichier déchiffré
+                        </button>
+                        <div style={{ opacity: 0.85, alignSelf: "center" }}>📎 {decryptedFile.name}</div>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 <div className="correction-form">
-                  <h3 className="section-subtitle">✏️ Enregistrer correction</h3>
+                  <h3 className="section-subtitle">✏️ Enregistrer correction (liée à la soumission)</h3>
 
                   <div className="form-group">
                     <div>
@@ -1489,7 +1784,7 @@ export default function App() {
             {/* ANTI-PLAGIAT */}
             {activeTab === "antiplagiat" && userRole === "enseignant" && (
               <div className="antiplagiat-panel card">
-                <h2 className="section-title">🛡️ Anti-Plagiat</h2>
+                <h2 className="section-title">🛡️ Anti-Plagiat (uniquement tes soumissions)</h2>
 
                 <button className="btn-primary" onClick={loadTeacherSubmissions}>
                   🔄 Charger mes soumissions
@@ -1505,19 +1800,11 @@ export default function App() {
                     onChange={(e) => setTeacherPrivateKey(e.target.value)}
                   />
                   <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
-                    <button
-                      className="btn-info"
-                      onClick={() => copyToClipboard(teacherPrivateKey)}
-                      disabled={!teacherPrivateKey}
-                    >
-                      📋 Copier ma clé collée
+                    <button className="btn-success" onClick={() => setTeacherPrivateKey(teacherPrivateKeyLocal)} disabled={!teacherPrivateKeyLocal}>
+                      ⚡ Utiliser ma clé privée (Profil)
                     </button>
-                    <button
-                      className="btn-warning"
-                      onClick={() => setTeacherPrivateKey("")}
-                      disabled={!teacherPrivateKey}
-                    >
-                      🧹 Vider le champ
+                    <button className="btn-warning" onClick={() => setTeacherPrivateKey("")} disabled={!teacherPrivateKey}>
+                      🧹 Vider
                     </button>
                   </div>
                 </div>
@@ -1556,6 +1843,15 @@ export default function App() {
                   <div className="decrypted-content">
                     <h3>📄 Contenu déchiffré</h3>
                     <pre style={{ whiteSpace: "pre-wrap" }}>{decryptedText}</pre>
+
+                    {decryptedFile?.blob && (
+                      <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <button className="btn-success" onClick={() => downloadBlob(decryptedFile.blob, decryptedFile.name)}>
+                          ⬇️ Télécharger fichier déchiffré
+                        </button>
+                        <div style={{ opacity: 0.85, alignSelf: "center" }}>📎 {decryptedFile.name}</div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1567,14 +1863,14 @@ export default function App() {
                 <h2 className="section-title">📤 Soumettre (texte + fichier)</h2>
 
                 <div className="form-group large">
-                  <label className="form-label">Devoir</label>
+                  <label className="form-label">Devoir (uniquement modules où tu es inscrit)</label>
                   <select
                     className="input-glass select-large"
                     value={newSoumission.devoirId}
                     onChange={(e) => setNewSoumission((s) => ({ ...s, devoirId: e.target.value }))}
                   >
                     <option value="">-- Choisir --</option>
-                    {devoirs.map((d) => {
+                    {eligibleDevoirs.map((d) => {
                       const mod = modules.find((m) => m.id === d.moduleId);
                       return (
                         <option key={d.id} value={d.id}>
@@ -1584,9 +1880,30 @@ export default function App() {
                     })}
                   </select>
 
-                  {/* ✅ Afficher fichier devoir prof si existe */}
+                  {eligibleDevoirs.length === 0 && (
+                    <div className="warning-box" style={{ marginTop: 10 }}>
+                      ⚠️ Aucun devoir disponible pour toi.
+                      <br />
+                      👉 Demande à l’admin de t’affecter à un module.
+                    </div>
+                  )}
+
+                  {newSoumission.devoirId && (
+                    <div className="info-box" style={{ marginTop: 10 }}>
+                      🔓 Clé publique du prof (info) :
+                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85, wordBreak: "break-all" }}>
+                        {selectedDevoirTeacherPubKey ? selectedDevoirTeacherPubKey.slice(0, 80) + "..." : "Non définie"}
+                      </div>
+                      {selectedDevoirTeacherPubKey && (
+                        <button className="btn-info" style={{ marginTop: 8 }} onClick={() => copyToClipboard(selectedDevoirTeacherPubKey)}>
+                          📋 Copier clé publique prof
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {(() => {
-                    const d = devoirs.find((x) => x.id === newSoumission.devoirId);
+                    const d = eligibleDevoirs.find((x) => x.id === newSoumission.devoirId);
                     if (!d?.attachment?.uri) return null;
                     return (
                       <div className="info-box" style={{ marginTop: 10 }}>
@@ -1638,12 +1955,16 @@ export default function App() {
                     placeholder="Votre réponse..."
                   />
 
-                  <button className="btn-success btn-large" onClick={soumettreDevoir}>
+                  <button className="btn-success btn-large" onClick={soumettreDevoir} disabled={!eligibleDevoirs.length}>
                     🔒 Soumettre (RSA + AES + Upload)
                   </button>
 
                   <div className="info-box">
-                    🔐 Le texte est chiffré RSA. Le fichier est chiffré AES puis uploadé, et la clé AES est chiffrée RSA.
+                    ✅ Le texte est chiffré RSA avec la clé publique du prof (stockée dans le devoir).
+                    <br />
+                    📎 Le fichier est chiffré AES puis uploadé, et la clé AES est chiffrée RSA.
+                    <br />
+                    ✅ L’adresse Ethereum de l’étudiant (wallet) identifie la soumission.
                   </div>
                 </div>
               </div>
@@ -1707,12 +2028,10 @@ export default function App() {
 
                         {s.fichierURI && (
                           <div className="devoir-desc">
-                            <strong>📎 Fichier:</strong> {s.fichierNom}{" "}
-                            <span style={{ opacity: 0.8 }}>(URI stockée)</span>
+                            <strong>📎 Fichier:</strong> {s.fichierNom} <span style={{ opacity: 0.8 }}>(URI stockée)</span>
                           </div>
                         )}
 
-                        {/* ✅ Afficher correction si dispo */}
                         {s.estCorrige && (
                           <div className="note-result" style={{ marginTop: 10 }}>
                             <div className="note-finale">{s.note}/20</div>
@@ -1730,9 +2049,6 @@ export default function App() {
                                 >
                                   ⬇️ Télécharger correction
                                 </button>
-                                <div style={{ opacity: 0.75, marginTop: 6, fontSize: 12 }}>
-                                  ⚠️ Actuellement, le fichier est probablement chiffré (AES) et l’étudiant n’a pas la clé.
-                                </div>
                               </div>
                             ) : null}
                           </div>
@@ -1763,61 +2079,133 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* ✅ NOUVEAU: zone clé privée générée + bouton copier */}
-                <div className="card" style={{ marginTop: 14 }}>
-                  <h3 className="section-subtitle">🔑 Clé privée RSA (copie facile)</h3>
+                {/* ✅ PROF ONLY */}
+                {userRole === "enseignant" ? (
+                  <div className="card" style={{ marginTop: 14 }}>
+                    <h3 className="section-subtitle">🔑 Mes clés RSA (PROF)</h3>
 
-                  {!lastGeneratedKey ? (
-                    <div style={{ opacity: 0.85 }}>
-                      Aucune clé générée récemment. (Quand tu génères une clé, elle apparaît ici.)
+                    <div className="info-box">
+                      🔓 Clé publique sur-chain
+                      <br />
+                      🔐 Clé privée locale (navigateur)
+                      <br />
+                      ✅ Modules visibles: uniquement tes modules
                     </div>
-                  ) : (
-                    <>
-                      <div style={{ opacity: 0.9, marginBottom: 8 }}>
-                        <b>Dernière clé:</b> {lastGeneratedKeyLabel || "Clé privée RSA"}
-                      </div>
 
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                        <button className="btn-info" onClick={() => copyToClipboard(lastGeneratedKey)}>
-                          📋 Copier la clé
+                    {/* ✅ FIX 1 : afficher uniquement les modules du prof dans profil */}
+                    <div className="card" style={{ marginTop: 12 }}>
+                      <h4 className="section-subtitle">📚 Mes modules</h4>
+                      {modulesVisibles.length === 0 ? (
+                        <p className="empty-state">Aucun module assigné.</p>
+                      ) : (
+                        <div className="modules-list">
+                          {modulesVisibles.map((m) => (
+                            <div key={m.id} className="module-item">
+                              📖 <b>{m.nom}</b> (ID {m.id}, coeff {m.coefficient})
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ✅ FIX 1 : afficher uniquement les devoirs du prof dans profil */}
+                    <div className="card" style={{ marginTop: 12 }}>
+                      <h4 className="section-subtitle">📝 Mes devoirs</h4>
+                      {devoirsVisibles.length === 0 ? (
+                        <p className="empty-state">Aucun devoir créé.</p>
+                      ) : (
+                        <div className="modules-list">
+                          {devoirsVisibles.map((d) => (
+                            <div key={d.id} className="module-item">
+                              📝 <b>{d.titre}</b> (Devoir ID {d.id}) — Module {d.moduleId}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ opacity: 0.9, marginBottom: 6 }}>
+                        <b>Clé publique on-chain :</b>
+                      </div>
+                      <textarea
+                        className="input-glass textarea-large"
+                        readOnly
+                        value={teacherPublicKeyOnChain || ""}
+                        placeholder="(vide) → clique sur “Générer & enregistrer”"
+                      />
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+                        <button className="btn-info" onClick={() => copyToClipboard(teacherPublicKeyOnChain)} disabled={!teacherPublicKeyOnChain}>
+                          📋 Copier clé publique
                         </button>
-                        <button className="btn-warning" onClick={() => setShowLastKey((v) => !v)}>
-                          {showLastKey ? "🙈 Masquer" : "👁️ Afficher"}
+                        <button className="btn-primary" onClick={pushPublicKeyOnly}>
+                          ✅ Vérifier clé publique
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 14 }}>
+                      <div style={{ opacity: 0.9, marginBottom: 6 }}>
+                        <b>Clé privée (locale) :</b>
+                      </div>
+                      <textarea
+                        className="input-glass textarea-large"
+                        readOnly
+                        value={showMyPriv ? teacherPrivateKeyLocal || "" : teacherPrivateKeyLocal ? "•••••••••• (masquée)" : ""}
+                        placeholder="(vide) → clique sur “Générer & enregistrer”"
+                      />
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+                        <button className="btn-info" onClick={() => copyToClipboard(teacherPrivateKeyLocal)} disabled={!teacherPrivateKeyLocal}>
+                          📋 Copier clé privée
+                        </button>
+                        <button className="btn-warning" onClick={() => setShowMyPriv((v) => !v)}>
+                          {showMyPriv ? "🙈 Masquer" : "👁️ Afficher"}
                         </button>
                         <button
                           className="btn-success"
                           onClick={() => {
-                            setLastGeneratedKey("");
-                            setLastGeneratedKeyLabel("");
-                            setShowLastKey(false);
+                            saveTeacherPrivateKeyLocal("");
+                            setShowMyPriv(false);
                           }}
+                          disabled={!teacherPrivateKeyLocal}
                         >
-                          🧹 Effacer
+                          🧹 Effacer locale
                         </button>
                       </div>
+                    </div>
 
-                      {showLastKey && (
-                        <textarea
-                          className="input-glass textarea-large"
-                          style={{ marginTop: 10 }}
-                          readOnly
-                          value={lastGeneratedKey}
-                        />
-                      )}
-
-                      <div style={{ opacity: 0.75, marginTop: 8, fontSize: 12 }}>
-                        ⚠️ Ne partage jamais la clé privée publiquement. Donne-la فقط للـ professeur concerné.
-                      </div>
-                    </>
-                  )}
-                </div>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+                      <button className="btn-primary btn-large" onClick={generateAndRegisterTeacherKeys}>
+                        🔑 Générer & enregistrer
+                      </button>
+                      <button
+                        className="btn-info"
+                        onClick={async () => {
+                          const t = await pasteFromClipboard();
+                          if (t) {
+                            saveTeacherPrivateKeyLocal(t);
+                            alert("✅ Clé privée collée et sauvegardée localement.");
+                          }
+                        }}
+                      >
+                        📥 Coller ma clé privée (sauver local)
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="warning-box" style={{ marginTop: 14 }}>
+                    ℹ️ Dans cette version, la gestion des clés RSA
+                         est <b>uniquement pour l’enseignant</b>.
+                    <br />
+                    ✅ L’étudiant n’a pas besoin de clé privée/publique pour soumettre.
+                  </div>
+                )}
               </div>
             )}
           </>
         )}
       </main>
 
-      {/* FOOTER */}
       <footer className="footer">
         <div className="container">
           <p>© 2025 ENSA Tétouan — Système de Gestion des Contrôles Blockchain</p>

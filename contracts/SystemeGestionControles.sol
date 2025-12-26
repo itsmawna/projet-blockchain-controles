@@ -4,6 +4,17 @@ pragma solidity ^0.8.19;
 /**
  * @title SystemeGestionControles
  * @dev Gestion devoirs/contrôles + modules/coefs + fichiers off-chain + notes
+ *
+ * ✅ Modifs demandées :
+ * - Admin attribue le prof + les étudiants aux modules
+ * - Admin NE FOURNIT PAS les clés (ni prof ni étudiant)
+ * - Prof/Etudiant définissent eux-mêmes leurs clés PUBLIQUES via leur page Profile
+ * - Étudiant peut être inscrit dans plusieurs modules
+ * - Prof a un seul module principal (moduleId) comme avant
+ * - Empêche soumission si étudiant pas inscrit au module du devoir
+ *
+ * ⚠️ IMPORTANT : ne stocke JAMAIS la clé privée sur la blockchain.
+ * Elle doit rester côté client (localStorage / fichier / etc.).
  */
 contract SystemeGestionControles {
     // =========================
@@ -13,16 +24,17 @@ contract SystemeGestionControles {
     struct Enseignant {
         address adresse;
         string nom;
-        string clePublique; // RSA public key (base64 / spki)
+        string clePublique; // ✅ définie par le prof lui-même (RSA public key base64/spki)
         bool estActif;
         uint256 dateInscription;
-        uint256 moduleId; // 1 prof -> 1 module principal
+        uint256 moduleId; // ✅ 1 prof -> 1 module principal (comme tu veux)
     }
 
     struct Etudiant {
         address adresse;
         string nom;
         string numeroEtudiant;
+        string clePublique; // ✅ définie par l'étudiant lui-même
         bool estActif;
         uint256 dateInscription;
     }
@@ -123,16 +135,27 @@ contract SystemeGestionControles {
     // ✅ Empêcher double soumission
     mapping(uint256 => mapping(address => bool)) public aDejaSoumis;
 
+    // ✅ Inscription des étudiants aux modules (un étudiant peut être dans plusieurs modules)
+    mapping(uint256 => address[]) public etudiantsParModule; // moduleId -> liste d'adresses
+    mapping(uint256 => mapping(address => bool)) public estInscritDansModule; // moduleId -> (etudiant -> bool)
+
     // =========================
     // EVENTS
     // =========================
 
     event EnseignantInscrit(address indexed adresse, string nom, uint256 moduleId);
     event EtudiantInscrit(address indexed adresse, string nom, string numeroEtudiant);
+
+    event ClePubliqueEnseignantMiseAJour(address indexed enseignant);
+    event ClePubliqueEtudiantMiseAJour(address indexed etudiant);
+
     event ModuleCree(uint256 indexed moduleId, string nom, uint256 coefficient, address indexed enseignant);
+    event EtudiantAffecteModule(uint256 indexed moduleId, address indexed etudiant);
+
     event DevoirCree(uint256 indexed devoirId, address indexed enseignant, string titre, uint256 moduleId);
     event SoumissionEnvoyee(uint256 indexed soumissionId, uint256 indexed devoirId, address indexed etudiant);
     event SoumissionCorrigee(uint256 indexed soumissionId, uint256 note);
+
     event AnnoncePubliee(uint256 indexed annonceId, address indexed auteur, string titre);
 
     // =========================
@@ -183,7 +206,9 @@ contract SystemeGestionControles {
         address _enseignant
     ) external seulementAdmin returns (uint256) {
         require(_coefficient > 0, "Coefficient invalide");
+        require(_enseignant != address(0), "Adresse enseignant invalide");
         require(enseignants[_enseignant].estActif, "Enseignant non actif");
+        require(enseignants[_enseignant].moduleId == 0, "Ce prof a deja un module"); // ✅ prof 1 seul module
 
         compteurModules++;
         modules[compteurModules] = Module({
@@ -196,7 +221,7 @@ contract SystemeGestionControles {
 
         listeModules.push(compteurModules);
 
-        // Attacher le module au prof (simple: 1 prof -> 1 module principal)
+        // ✅ Attacher le module au prof (1 prof -> 1 module principal)
         enseignants[_enseignant].moduleId = compteurModules;
 
         emit ModuleCree(compteurModules, _nom, _coefficient, _enseignant);
@@ -215,10 +240,10 @@ contract SystemeGestionControles {
     // INSCRIPTIONS (ADMIN)
     // =========================
 
+    // ✅ Admin inscrit le prof SANS clé (le prof la mettra lui-même)
     function inscrireEnseignant(
         address _adresse,
-        string calldata _nom,
-        string calldata _clePublique
+        string calldata _nom
     ) external seulementAdmin {
         require(_adresse != address(0), "Adresse invalide");
         require(!enseignants[_adresse].estActif, "Enseignant deja inscrit");
@@ -226,7 +251,7 @@ contract SystemeGestionControles {
         enseignants[_adresse] = Enseignant({
             adresse: _adresse,
             nom: _nom,
-            clePublique: _clePublique,
+            clePublique: "", // ✅ vide au debut
             estActif: true,
             dateInscription: block.timestamp,
             moduleId: 0
@@ -236,6 +261,7 @@ contract SystemeGestionControles {
         emit EnseignantInscrit(_adresse, _nom, 0);
     }
 
+    // ✅ Admin inscrit l'étudiant SANS clé (l'étudiant la mettra lui-même)
     function inscrireEtudiant(
         address _adresse,
         string calldata _nom,
@@ -248,12 +274,58 @@ contract SystemeGestionControles {
             adresse: _adresse,
             nom: _nom,
             numeroEtudiant: _numeroEtudiant,
+            clePublique: "", // ✅ vide au debut
             estActif: true,
             dateInscription: block.timestamp
         });
 
         listeEtudiants.push(_adresse);
         emit EtudiantInscrit(_adresse, _nom, _numeroEtudiant);
+    }
+
+    // =========================
+    // CLES PUBLIQUES (SELF-SERVICE)
+    // =========================
+
+    // ✅ Le prof définit sa clé publique depuis sa page profile
+    function definirClePubliqueEnseignant(string calldata _clePublique) external seulementEnseignant {
+        require(bytes(_clePublique).length > 0, "Cle publique vide");
+        enseignants[msg.sender].clePublique = _clePublique;
+        emit ClePubliqueEnseignantMiseAJour(msg.sender);
+    }
+
+    // ✅ L'étudiant définit sa clé publique depuis son profile
+    function definirClePubliqueEtudiant(string calldata _clePublique) external seulementEtudiant {
+        require(bytes(_clePublique).length > 0, "Cle publique vide");
+        etudiants[msg.sender].clePublique = _clePublique;
+        emit ClePubliqueEtudiantMiseAJour(msg.sender);
+    }
+
+    // =========================
+    // AFFECTATION ETUDIANTS -> MODULE (ADMIN)
+    // =========================
+
+    function affecterEtudiantAuModule(uint256 _moduleId, address _etudiant)
+        external
+        seulementAdmin
+        moduleExiste(_moduleId)
+    {
+        require(_etudiant != address(0), "Adresse etudiant invalide");
+        require(etudiants[_etudiant].estActif, "Etudiant non actif");
+        require(!estInscritDansModule[_moduleId][_etudiant], "Deja inscrit au module");
+
+        estInscritDansModule[_moduleId][_etudiant] = true;
+        etudiantsParModule[_moduleId].push(_etudiant);
+
+        emit EtudiantAffecteModule(_moduleId, _etudiant);
+    }
+
+    function obtenirEtudiantsModule(uint256 _moduleId)
+        external
+        view
+        returns (address[] memory)
+    {
+        return etudiantsParModule[_moduleId];
     }
 
     // =========================
@@ -306,10 +378,13 @@ contract SystemeGestionControles {
         require(block.timestamp <= devoirs[_devoirId].dateLimite, "Date limite depassee");
         require(!aDejaSoumis[_devoirId][msg.sender], "Deja soumis");
 
+        uint256 moduleId = devoirs[_devoirId].moduleId;
+
+        // ✅ IMPORTANT : seul un étudiant inscrit au module peut soumettre
+        require(estInscritDansModule[moduleId][msg.sender], "Pas inscrit dans ce module");
+
         aDejaSoumis[_devoirId][msg.sender] = true;
         compteurSoumissions++;
-
-        uint256 moduleId = devoirs[_devoirId].moduleId;
 
         soumissions[compteurSoumissions] = Soumission({
             id: compteurSoumissions,
