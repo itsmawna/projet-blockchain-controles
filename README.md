@@ -1,4 +1,4 @@
-# 📚 Système de Gestion des Contrôles - Blockchain
+# 📚 Système de Gestion des Contrôles - Blockchain (ENSA Tétouan)
 
 > Projet Final - Module Fondamentaux de la Blockchain (M356)  
 > ENSA Tétouan - Département IA & Digitalisation
@@ -10,16 +10,35 @@
 
 ## 🎯 À Propos
 
-Plateforme décentralisée de gestion des contrôles et devoirs utilisant la technologie blockchain pour garantir la transparence, la sécurité et l'équité dans le processus éducatif.
+Plateforme décentralisée de gestion des contrôles/devoirs basée sur **Ethereum**, avec :
+- gestion des **rôles** (Admin / Enseignant / Étudiant),
+- gestion des **modules & coefficients**,
+- **soumissions chiffrées** (RSA pour texte + AES pour fichiers),
+- **upload off-chain** des fichiers (serveur Express + multer),
+- **anti-plagiat simple** côté enseignant (comparaison de similarité).
 
-### ✨ Caractéristiques Principales
+L’objectif est de garantir **traçabilité**, **intégrité**, **équité** et **confidentialité** des soumissions.
 
-- ✅ **Transparence totale** : Toutes les transactions sont publiques et vérifiables
-- 🔒 **Sécurité RSA** : Chiffrement des soumissions pour empêcher la tricherie
-- 🛡️ **Anti-plagiat** : Chaque soumission est unique grâce au chiffrement
-- ⛓️ **Immuabilité** : Les données ne peuvent pas être modifiées
-- 👥 **Équité** : Droits égaux pour tous les participants
-- 📊 **Traçabilité** : Historique complet de toutes les actions
+---
+
+## ✨ Fonctionnalités clés
+
+### ✅ Gestion académique
+- **Admin** : inscrit enseignants/étudiants + affecte les étudiants aux modules
+- **Enseignant** : crée des devoirs dans ses modules + corrige ses soumissions
+- **Étudiant** : voit uniquement les devoirs de ses modules + soumet avant la date limite
+
+### 🔐 Chiffrement & Fichiers
+- **Texte (réponse + identité)** : chiffré en **RSA (RSA-OAEP 2048)** avec la clé publique du prof
+- **Fichier (optionnel)** : chiffré en **AES**, puis uploadé sur serveur off-chain
+- La **clé AES** est ensuite chiffrée en RSA avec la clé publique du prof
+- Le prof **déchiffre** avec sa **clé privée locale** (jamais stockée on-chain)
+
+### 🧾 Correction
+- Correction liée à une **soumission précise** (donc automatiquement liée à l’étudiant qui a soumis)
+- Possibilité d’ajouter un **fichier de correction** (upload)
+
+---
 
 ## 🏗️ Architecture
 
@@ -78,15 +97,12 @@ npm install
 cd ..
 ```
 
-### Étape 3 : Configuration
-
+### Étape 3 : Upload server
 ```bash
-# Copier le fichier d'environnement
-cp .env.example .env
-
-# Éditer .env avec vos valeurs
-nano .env
-```
+cd upload-server
+npm init -y
+npm i express cors multer
+cd ..
 
 ### Étape 4 : Compiler le contrat
 
@@ -107,24 +123,40 @@ npx hardhat node
 # Terminal 2
 npx hardhat run scripts/deploy.js --network localhost
 ```
+Le script écrit l’adresse dans contract-address.json.
+Ensuite, mets à jour l’adresse dans frontend/src/App.jsx :
+```bash
+const CONTRACT_ADDRESS = "ADRESSE_DEPLOYEE";
+```
+### Étape 8 : Lancer backend
+```bash
+cd upload-server
+npm init -y
+npm i express cors multer
+node server.js
+```
+Serveur : http://localhost:5001
 
-### Étape 7 : Lancer l'interface
+Upload : POST http://localhost:5001/upload
+
+Download : http://localhost:5001/files/<filename>
+### Étape 8 : Lancer l'interface
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-Accéder à `http://localhost:3000` 🎉
+Accéder à `http://localhost:3000` 
 
 ## 📖 Guide d'Utilisation
 
-### Pour l'Administrateur
+### Pour l'Administrateur (deployeur)
 
-1. **Connecter le wallet** avec l'adresse de déployeur
-2. **Inscrire les enseignants** via le script ou l'interface
-3. **Inscrire les étudiants**
-
+1. Se connecter avec le wallet déployeur (admin)
+2. Inscrire enseignants + étudiants
+3. Affecter les étudiants aux modules (un étudiant peut être inscrit dans plusieurs modules)
+**Important : l’étudiant ne peut soumettre que s’il est inscrit au module du devoir.**
 ```bash
 # Utiliser le script interactif
 npx hardhat run scripts/manage-users.js --network localhost
@@ -132,44 +164,44 @@ npx hardhat run scripts/manage-users.js --network localhost
 
 ### Pour les Enseignants
 
-1. **Se connecter** avec MetaMask
-2. **Créer un devoir** :
-   - Titre et description
-   - Date limite
-   - Le système génère automatiquement les clés RSA
-3. **Corriger les soumissions** :
-   - Déchiffrer les réponses avec la clé privée
-   - Attribuer notes et commentaires
+1. Se connecter avec MetaMask
+2. Aller dans Profil → Générer & enregistrer :
+   -clé publique enregistrée on-chain
+   -clé privée stockée localement (navigateur)
+3. Créer un devoir (uniquement dans ses modules)
+4. Corriger :
+   -charger ses soumissions
+   -coller / charger sa clé privée
+   -déchiffrer + noter
+
+Chaque soumission est liée à l’étudiant via msg.sender dans le smart contract.
 
 ### Pour les Étudiants
+1. Se connecter avec MetaMask
+2. Voir uniquement les devoirs des modules où il est inscrit
+3. Soumettre :
+   -texte chiffré RSA
+   -fichier optionnel chiffré AES + upload
 
-1. **Se connecter** avec MetaMask
-2. **Consulter les devoirs** disponibles
-3. **Soumettre un devoir** :
-   - Choisir le devoir
-   - Rédiger les réponses
-   - Le système chiffre automatiquement
-4. **Consulter les résultats**
+4. Consulter ses notes & télécharger la correction si disponible
 
 ## 🔒 Sécurité
 
-### Chiffrement RSA
+### RSA (texte)
 
-Chaque devoir utilise une paire de clés unique :
+-L’enseignant publie sa clé publique (profil) sur la blockchain.
+-Lors de la création du devoir, le devoir stocke la clé publique de chiffrement.
+-L’étudiant chiffre identité + réponse avec la clé publique du devoir.
 
-```javascript
-// L'enseignant génère les clés
-const keyPair = {
-  publicKey: "PUBLIC_KEY_...",  // Partagée avec les étudiants
-  privateKey: "PRIVATE_KEY_..." // Gardée secrète par l'enseignant
-}
+### AES (fichier)
 
-// L'étudiant chiffre sa soumission
-const encrypted = encryptRSA(response, publicKey);
+-L’étudiant génère une clé AES aléatoire
+-chiffre le fichier avec AES
+-upload le contenu chiffré au serveur
+-chiffre la clé AES avec la clé publique RSA du prof
+-stocke (hash/nom/type/uri/cleAESChiffree) dans la blockchain
 
-// Seul l'enseignant peut déchiffrer
-const decrypted = decryptRSA(encrypted, privateKey);
-```
+**La clé privée n’est jamais stockée on-chain.**
 
 ### Protection Anti-Plagiat
 
@@ -193,28 +225,6 @@ npx hardhat coverage
 npx hardhat test test/SystemeGestionControles.test.js
 ```
 
-## 🌐 Déploiement
-
-### Réseau de Test Sepolia
-
-```bash
-# 1. Obtenir des ETH de test
-# https://sepoliafaucet.com/
-
-# 2. Configurer .env avec votre clé privée
-
-# 3. Déployer
-npx hardhat run scripts/deploy.js --network sepolia
-
-# 4. Vérifier sur Etherscan
-npx hardhat verify --network sepolia <ADRESSE_CONTRAT>
-```
-
-### Réseau de Test Mumbai (Polygon)
-
-```bash
-npx hardhat run scripts/deploy.js --network mumbai
-```
 
 ## 📁 Structure du Projet
 
@@ -233,23 +243,32 @@ systeme-gestion-controles-blockchain/
 │   │   └── utils/                      # Utilitaires
 │   └── package.json
 ├── hardhat.config.js                   # Configuration Hardhat
+├── upload-server/
+│   └── server.js
 ├── .env.example                        # Exemple de configuration
 ├── package.json
+├── contract-address.json
 └── README.md
 ```
 
 ## 📊 Fonctionnalités du Smart Contract
 
-| Fonction | Description | Rôle requis |
-|----------|-------------|-------------|
-| `inscrireEnseignant()` | Inscrire un enseignant | Admin |
-| `inscrireEtudiant()` | Inscrire un étudiant | Admin |
-| `creerDevoir()` | Créer un nouveau devoir | Enseignant |
-| `soumettreDevoir()` | Soumettre un devoir | Étudiant |
-| `corrigerSoumission()` | Corriger et noter | Enseignant |
-| `publierAnnonce()` | Publier une annonce | Tous |
-| `obtenirDevoir()` | Consulter un devoir | Tous |
-| `obtenirSoumission()` | Voir une soumission | Tous |
+## 🧩 Fonctions Smart Contract (résumé)
+
+| Fonction                         | Description                                   | Rôle            |
+|----------------------------------|-----------------------------------------------|-----------------|
+| `inscrireEnseignant()`           | Inscrire un enseignant                        | Admin           |
+| `inscrireEtudiant()`             | Inscrire un étudiant                          | Admin           |
+| `affecterEtudiantAuModule()`     | Inscrire un étudiant dans un module           | Admin           |
+| `definirClePubliqueEnseignant()` | Enregistrer la clé publique du professeur     | Enseignant      |
+| `definirClePubliqueEtudiant()`   | Enregistrer la clé publique de l’étudiant     | Étudiant        |
+| `creerDevoir()`                  | Créer un devoir                               | Enseignant      |
+| `soumettreDevoir()`              | Soumettre (vérifie l’inscription au module)   | Étudiant        |
+| `corrigerSoumission()`           | Noter et commenter une soumission             | Enseignant      |
+| `obtenirDevoir()`                | Lire un devoir                                | Tous            |
+| `obtenirSoumission()`            | Lire une soumission                           | Tous (lecture)  |
+
+
 
 ## 🎓 Objectifs Pédagogiques Atteints
 
@@ -274,50 +293,36 @@ systeme-gestion-controles-blockchain/
 - **Ethers.js v6** : Connexion wallet
 - **MetaMask** : Wallet Ethereum
 
-## 📝 Scripts Disponibles
 
-```bash
-# Compilation
-npm run compile
+## 🐛 Dépannage (problèmes fréquents)
 
-# Tests
-npm run test
+### MetaMask / réseau local
+Ajouter le réseau **Hardhat** :
+- **RPC URL** : `http://127.0.0.1:8545`
+- **Chain ID** : `31337`
 
-# Déploiement
-npm run deploy:local
-npm run deploy:sepolia
-npm run deploy:mumbai
+---
 
-# Nœud local
-npm run node
+### ❌ “Contrat non trouvé”
+Vérifier :
+- le fichier `contract-address.json`
+- la valeur de `CONTRACT_ADDRESS` dans `App.jsx`
+- que le réseau MetaMask actif est **localhost (31337)**
 
-# Gestion utilisateurs
-npm run manage
+---
 
-# Nettoyage
-npm run clean
-```
+### 👨‍🎓 Étudiant ne voit aucun devoir
+- l’admin doit avoir **affecté l’étudiant à un module**
+- le devoir doit appartenir à ce module
 
-## 🐛 Dépannage
+---
 
-### MetaMask ne se connecte pas
+### ⛔ Soumission refusée
+Causes possibles :
+- date limite dépassée
+- étudiant non inscrit au module du devoir
+- devoir déjà soumis (protection anti double soumission)
 
-1. Vérifier que MetaMask est installé
-2. Ajouter le réseau local Hardhat :
-   - URL RPC : `http://127.0.0.1:8545`
-   - Chain ID : `31337`
-
-### Transaction échoue
-
-1. Vérifier la balance du compte
-2. S'assurer d'avoir le bon rôle (enseignant/étudiant)
-3. Vérifier les dates limites des devoirs
-
-### Contrat non trouvé
-
-1. Vérifier que le contrat est déployé
-2. Mettre à jour l'adresse dans le frontend
-3. Vérifier le réseau actif dans MetaMask
 
 ## 🤝 Contribution
 
