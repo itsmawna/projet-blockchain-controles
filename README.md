@@ -202,6 +202,205 @@ Chaque soumission est liée à l’étudiant via msg.sender dans le smart contra
 -stocke (hash/nom/type/uri/cleAESChiffree) dans la blockchain
 
 **La clé privée n’est jamais stockée on-chain.**
+## Sécurité et chiffrement (RSA + AES) : details
+
+Ce projet utilise un **chiffrement hybride** combinant **RSA** et **AES**, comme dans les systèmes réels (HTTPS, PGP, etc.).
+
+**Objectif :**
+- Garantir que **seul l’enseignant** peut lire les soumissions
+- Chiffrer efficacement les **textes** et les **fichiers**
+- Éviter toute gestion de clés côté étudiant
+
+---
+
+## 1. Algorithmes utilisés
+
+### 🔑 RSA (asymétrique)
+- Paire de clés : **clé publique / clé privée**
+- Utilisé pour :
+  - Chiffrer le texte (`contenuChiffre`, `identiteChiffree`)
+  - Chiffrer la **clé AES** (`cleAESChiffree`)
+- Clé publique : stockée **on-chain** dans le devoir
+- Clé privée : stockée **localement chez l’enseignant**
+
+Dans le code :
+- `rsaEncrypt(message, publicKey)`
+- `rsaDecrypt(ciphertext, privateKey)`
+- RSA-OAEP 2048 + SHA-256 (WebCrypto)
+
+---
+
+### 🗝️ AES (symétrique)
+- Une **seule clé secrète**
+- Utilisé pour :
+  - Chiffrer les **fichiers volumineux** (PDF, DOC, ZIP…)
+- Rapide et efficace pour les gros fichiers
+
+Dans le code :
+- `generateAESKey()`
+- `encryptFileContentToString(file, aesKey)`
+- `decryptAesStringToBytes(encrypted, aesKey)`
+
+---
+
+### 🔍 SHA-256 (hash)
+- **Ne chiffre pas**
+- Sert à vérifier l’intégrité du contenu
+- Si le fichier change → le hash change
+
+📌 Utilisé pour :
+- `fichierHash`
+- Vérification d’intégrité des fichiers uploadés
+
+---
+
+## 2. Principe du chiffrement hybride (simple)
+
+- ❌ RSA seul → trop lent pour les fichiers
+- ❌ AES seul → problème pour transmettre la clé
+- ✅ **RSA + AES** → solution optimale
+
+👉 **Idée clé :**
+> Le fichier est chiffré avec AES,  
+> et la clé AES est chiffrée avec RSA.
+
+---
+
+## 3. Flux : Étudiant → Blockchain → Enseignant
+
+```text
+[ ÉTUDIANT ]
+    |
+    |-- RSA(publicKeyProf)
+    |      ├─ contenuChiffre        (réponse texte)
+    |      ├─ identiteChiffree      (nom / identité)
+    |
+    |-- AES
+    |      ├─ fichier chiffré
+    |      ├─ fichierHash (SHA-256)
+    |
+    |-- RSA(publicKeyProf)
+    |      └─ cleAESChiffree
+    |
+    v
+[ BLOCKCHAIN ]
+    ├─ contenuChiffre
+    ├─ identiteChiffree
+    ├─ fichierHash
+    ├─ fichierNom
+    ├─ fichierType
+    ├─ fichierURI          (serveur d’upload)
+    ├─ cleAESChiffree
+    └─ etudiant = msg.sender (adresse Ethereum)
+    |
+    v
+[ ENSEIGNANT ]
+    |
+    |-- RSA(privateKeyProf)
+    |      ├─ déchiffre contenuChiffre
+    |      ├─ déchiffre identiteChiffree
+    |      └─ déchiffre cleAESChiffree → clé AES
+    |
+    |-- AES
+    |      └─ déchiffre le fichier depuis fichierURI
+```
+```mermaid
+flowchart TD
+    Etudiant[Etudiant]
+
+    Etudiant --> RSA1[Chiffrement RSA<br/>publicKeyProf]
+    RSA1 --> contenuChiffre[contenuChiffre]
+    RSA1 --> identiteChiffree[identiteChiffree]
+
+    Etudiant --> AES1[Chiffrement AES]
+    AES1 --> fichierChiffre[fichierChiffre]
+    fichierChiffre --> fichierHash[fichierHash_SHA256]
+    fichierChiffre --> fichierURI[fichierURI]
+
+    Etudiant --> RSA2[Chiffrement RSA<br/>cle AES]
+    RSA2 --> cleAESChiffree[cleAESChiffree]
+
+    contenuChiffre --> Blockchain[Blockchain]
+    identiteChiffree --> Blockchain
+    fichierHash --> Blockchain
+    fichierURI --> Blockchain
+    cleAESChiffree --> Blockchain
+
+    Blockchain --> Enseignant[Enseignant]
+
+    Enseignant --> RSA3[Dechiffrement RSA<br/>privateKeyProf]
+    RSA3 --> contenuClair[contenuClair]
+    RSA3 --> identiteClaire[identiteClaire]
+    RSA3 --> cleAES[cleAES]
+
+    cleAES --> AES2[Dechiffrement AES]
+    AES2 --> fichierClair[fichierClair]
+
+```
+```mermaid
+flowchart TD
+    Enseignant[Enseignant]
+
+    Enseignant --> AEScorr[AES optionnel]
+    AEScorr --> fichierCorrectionChiffre[fichierCorrectionChiffre]
+
+    fichierCorrectionChiffre --> hashCorrection[fichierCorrectionHash_SHA256]
+
+    Enseignant --> Blockchain[Blockchain]
+
+    Blockchain --> note[note]
+    Blockchain --> commentaire[commentaire]
+    Blockchain --> hashCorrection
+    Blockchain --> fichierCorrectionNom[fichierCorrectionNom]
+    Blockchain --> fichierCorrectionURI[fichierCorrectionURI]
+
+    Blockchain --> Etudiant[Etudiant]
+    Etudiant --> telechargement[Telechargement correction]
+
+```
+
+
+## 4. Flux : Enseignant → Blockchain → Étudiant (correction)
+```text
+[ ENSEIGNANT ]
+    |
+    |-- (optionnel) AES
+    |      └─ fichier de correction chiffré
+    |
+    |-- SHA-256
+    |      └─ fichierCorrectionHash
+    |
+    v
+[ BLOCKCHAIN ]
+    ├─ note
+    ├─ commentaire
+    ├─ fichierCorrectionHash
+    ├─ fichierCorrectionNom
+    └─ fichierCorrectionURI
+    |
+    v
+[ ÉTUDIANT ]
+    |
+    └─ Téléchargement du fichier de correction
+       (selon la logique définie par l’enseignant)
+```
+**Points de sécurité importants**
+
+-Aucune clé privée côté étudiant
+-Une seule clé RSA par enseignant
+-L’adresse Ethereum (msg.sender) identifie l’étudiant
+-Les devoirs utilisent la clé publique du prof
+-Si le prof régénère ses clés après un devoir → anciennes soumissions illisibles
+
+## 6. Résumé 
+
+| Élément     | Algorithme | Rôle               |
+|------------|------------|--------------------|
+| Texte      | RSA        | Confidentialité    |
+| Fichiers   | AES        | Performance        |
+| Clé AES    | RSA        | Sécurité           |
+| Hash       | SHA-256    | Intégrité          |
+| Identité   | Ethereum   | Authentification   |
 
 ### Protection Anti-Plagiat
 
