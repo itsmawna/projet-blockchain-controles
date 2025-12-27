@@ -68,6 +68,14 @@ L’objectif est de garantir **traçabilité**, **intégrité**, **équité** et
 │         (Immuable, Décentralisée, Sécurisée)        │
 └─────────────────────────────────────────────────────┘
 ```
+```mermaid
+flowchart LR
+  HH[Hardhat Node<br/>localhost:8545<br/>chainId 31337] --> MM[MetaMask]
+  MM --> R[React + Ethers.js]
+  R --> SC[Smart Contract Solidity]
+  R --> UP[Upload Server Express<br/>localhost:5001]
+  UP --> FS[(Fichiers chiffrés)]
+```
 
 ## 🚀 Installation Rapide
 
@@ -675,6 +683,82 @@ une soumission est automatiquement liée à l’étudiant qui l’a envoyée (ad
 
 **Donc pas besoin de login/password** :
 MetaMask = authentification + signature.
+```mermaid
+flowchart TD
+  A([Début projet]) --> B[Initialisation environnement]
+  B --> B1[Installer Node.js + npm]
+  B --> B2[Installer Git]
+  B --> B3[Installer MetaMask sur navigateur]
+  B --> C[Cloner le repository]
+  C --> C1[git clone + cd projet]
+
+  C1 --> D[Installation dépendances]
+  D --> D1[npm install (racine)]
+  D --> D2[cd frontend && npm install]
+  D --> D3[cd upload-server && npm install (express cors multer)]
+
+  D3 --> E[Configuration Hardhat]
+  E --> E1[Créer hardhat.config.js]
+  E1 --> E2[Définir version solidity 0.8.19]
+  E2 --> E3[Définir réseau localhost (chainId 31337)]
+  E3 --> F[Développement Smart Contract]
+  F --> F1[Définir rôles: Admin / Enseignant / Étudiant]
+  F1 --> F2[Modules + coefficients + affectation étudiants]
+  F2 --> F3[Devoirs: création + date limite + stockage clé publique prof]
+  F3 --> F4[Soumissions: msg.sender = étudiant + anti double soumission]
+  F4 --> F5[Corrections: liées à soumissionId]
+  F5 --> F6[Annonces: prof/étudiant]
+
+  F6 --> G[Compilation]
+  G --> G1[npx hardhat compile]
+
+  G1 --> H[Blockchain locale]
+  H --> H1[Terminal 1: npx hardhat node]
+  H1 --> H2[Comptes + clés privées affichées + ETH fictif]
+
+  H2 --> I[Déploiement]
+  I --> I1[Terminal 2: npx hardhat run scripts/deploy.js --network localhost]
+  I1 --> I2[deploy.js récupère deployer + déploie contrat]
+  I2 --> I3[Écrit contract-address.json]
+  I3 --> I4[Copier adresse vers frontend (CONTRACT_ADDRESS)]
+
+  I4 --> J[Configuration MetaMask (Hardhat Localhost)]
+  J --> J1[Ajouter réseau: RPC http://127.0.0.1:8545]
+  J1 --> J2[Chain ID: 31337]
+  J2 --> J3[Currency: ETH]
+  J3 --> J4[Importer comptes Hardhat via private keys]
+
+  J4 --> K[Backend Upload Server]
+  K --> K1[cd upload-server]
+  K1 --> K2[node server.js]
+  K2 --> K3[Endpoints: POST /upload , GET /files/:name]
+
+  K3 --> L[Frontend React + Ethers.js]
+  L --> L1[Connexion wallet: eth_requestAccounts]
+  L1 --> L2[Vérif réseau chainId=31337]
+  L2 --> L3[Créer instance contract: new ethers.Contract]
+  L3 --> L4[Détection rôle: admin/enseignant/etudiant]
+  L4 --> L5[Filtrage UI: devoirs/modules selon rôle]
+
+  L5 --> M[Implémentation sécurité côté client]
+  M --> M1[PROF: génération RSA (WebCrypto)]
+  M1 --> M2[Clé publique on-chain]
+  M2 --> M3[Clé privée en localStorage]
+  M3 --> M4[ÉTUDIANT: RSA encrypt texte + identité]
+  M4 --> M5[ÉTUDIANT: AES encrypt fichier + upload]
+  M5 --> M6[Chiffrer clé AES en RSA avec clé publique prof]
+  M6 --> M7[Stocker uri/hash/nom/type/cleAESChiffree on-chain]
+
+  M7 --> N[Tests Hardhat]
+  N --> N1[npx hardhat test]
+  N1 --> N2[Tests rôles + modules + devoirs + soumissions + corrections]
+  N2 --> N3[Happy path + revert cases]
+  N3 --> O[Gas Report (optionnel)]
+  O --> O1[hardhat-gas-reporter]
+  O1 --> P[Documentation]
+  P --> P1[README complet: install + sécurité + dépannage + tests]
+  P1 --> Q([Fin: projet prêt + démo])
+```
 
 ## 📊 Fonctionnalités du Smart Contract
 
@@ -693,8 +777,97 @@ MetaMask = authentification + signature.
 | `obtenirDevoir()`                | Lire un devoir                                | Tous            |
 | `obtenirSoumission()`            | Lire une soumission                           | Tous (lecture)  |
 
+``` mermaid
+sequenceDiagram
+  autonumber
+  participant A as Admin (MetaMask)
+  participant P as Prof (MetaMask)
+  participant E as Étudiant (MetaMask)
+  participant R as React Frontend
+  participant C as Smart Contract
+  participant U as Upload Server
 
+  Note over A,R: Démarrage (Hardhat Node + Deploy)
+  A->>R: Connect Wallet (Account #0)
+  R->>C: administrateur() + estEnseignant/estEtudiant
+  R-->>A: Role = Admin
 
+  Note over A,C: Admin configure le système
+  A->>R: Inscrire Enseignant (adresse prof, nom)
+  R->>C: inscrireEnseignant()
+  A->>R: Créer module (nom, coeff, prof)
+  R->>C: creerModule()
+  A->>R: Inscrire Étudiant (adresse, nom, numéro)
+  R->>C: inscrireEtudiant()
+  A->>R: Affecter étudiant au module
+  R->>C: affecterEtudiantAuModule()
+
+  Note over P,R: Prof se prépare (clés RSA)
+  P->>R: Connect Wallet (compte prof)
+  R->>C: estEnseignant()
+  R-->>P: Role = Enseignant
+  P->>R: Profil -> Générer clés RSA
+  R-->>P: PrivKey stockée localStorage
+  R->>C: definirClePubliqueEnseignant(pubKey)
+
+  Note over P,C: Prof crée un devoir
+  P->>R: Créer Devoir (titre, desc, date limite)
+  opt fichier devoir
+    R->>U: Upload fichier devoir (optionnel)
+    U-->>R: uri
+  end
+  R->>C: creerDevoir(moduleId, titre, desc(+URI), pubKey, dateLimite)
+
+  Note over E,R: Étudiant soumet
+  E->>R: Connect Wallet (compte étudiant)
+  R->>C: estEtudiant() + estInscritDansModule()
+  R-->>E: Devoirs filtrés (seulement ses modules)
+
+  E->>R: Soumettre (identité + réponse)
+  R->>R: RSA encrypt(reponse, pubKey prof)
+  R->>R: RSA encrypt(identite, pubKey prof)
+
+  opt fichier soumission
+    R->>R: Générer AES key
+    R->>R: AES encrypt(fichier)
+    R->>U: Upload fichier chiffré
+    U-->>R: uri
+    R->>R: RSA encrypt(AES key, pubKey prof)
+  end
+
+  R->>C: soumettreDevoir(devoirId, contenuChiffre, identiteChiffree, hash, nom, type, uri, cleAESChiffree)
+
+  Note over P,R: Prof corrige
+  P->>R: Charger soumissions de ses devoirs
+  R->>C: obtenirSoumissionsDevoir(devoirId)
+  R->>C: obtenirSoumission(soumissionId)
+
+  P->>R: Coller/charger clé privée
+  R->>R: RSA decrypt(contenuChiffre)
+  R->>R: RSA decrypt(identiteChiffree)
+  opt fichier soumis
+    R->>R: RSA decrypt(cleAESChiffree) -> AES key
+    R->>U: Download fichier chiffré (uri)
+    U-->>R: encryptedContent
+    R->>R: AES decrypt -> fichier clair
+  end
+
+  P->>R: Entrer note + commentaire (+ fichier correction optionnel)
+  opt fichier correction
+    R->>U: Upload correction
+    U-->>R: uri
+  end
+  R->>C: corrigerSoumission(soumissionId, note, commentaire, hash, nom, uri)
+
+  Note over E,R: Étudiant consulte résultat
+  E->>R: Mes Notes
+  R->>C: obtenirNotesEtudiant(etudiant)
+  R-->>E: note + moyenne pondérée
+  opt correction disponible
+    R-->>E: bouton Télécharger correction (uri)
+  end
+
+```
 ## 🎓 Objectifs Pédagogiques Atteints
 
 - [x] Automatisation des tâches de gestion
