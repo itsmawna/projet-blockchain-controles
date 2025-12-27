@@ -340,11 +340,11 @@ flowchart TD
 
 
 
-## 4. Flux : Enseignant → Blockchain → Étudiant (correction)
+## 4. Flux : Enseignant → Blockchain → Étudiant
 ```text
 [ ENSEIGNANT ]
     |
-    |-- (optionnel) AES
+    |-- AES
     |      └─ fichier de correction chiffré
     |
     |-- SHA-256
@@ -368,7 +368,7 @@ flowchart TD
 flowchart TD
     Enseignant[Enseignant]
 
-    Enseignant --> AEScorr[AES optionnel]
+    Enseignant --> AEScorr[AES]
     AEScorr --> fichierCorrectionChiffre[fichierCorrectionChiffre]
 
     fichierCorrectionChiffre --> hashCorrection[fichierCorrectionHash_SHA256]
