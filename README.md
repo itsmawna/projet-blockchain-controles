@@ -256,11 +256,11 @@ Dans le code :
 
 ## 2. Principe du chiffrement hybride (simple)
 
-- ❌ RSA seul → trop lent pour les fichiers
-- ❌ AES seul → problème pour transmettre la clé
-- ✅ **RSA + AES** → solution optimale
+- RSA seul → trop lent pour les fichiers
+- AES seul → problème pour transmettre la clé
+- **RSA + AES** → solution optimale
 
-👉 **Idée clé :**
+**Idée clé :**
 > Le fichier est chiffré avec AES,  
 > et la clé AES est chiffrée avec RSA.
 
@@ -337,27 +337,7 @@ flowchart TD
     AES2 --> fichierClair[fichierClair]
 
 ```
-```mermaid
-flowchart TD
-    Enseignant[Enseignant]
 
-    Enseignant --> AEScorr[AES optionnel]
-    AEScorr --> fichierCorrectionChiffre[fichierCorrectionChiffre]
-
-    fichierCorrectionChiffre --> hashCorrection[fichierCorrectionHash_SHA256]
-
-    Enseignant --> Blockchain[Blockchain]
-
-    Blockchain --> note[note]
-    Blockchain --> commentaire[commentaire]
-    Blockchain --> hashCorrection
-    Blockchain --> fichierCorrectionNom[fichierCorrectionNom]
-    Blockchain --> fichierCorrectionURI[fichierCorrectionURI]
-
-    Blockchain --> Etudiant[Etudiant]
-    Etudiant --> telechargement[Telechargement correction]
-
-```
 
 
 ## 4. Flux : Enseignant → Blockchain → Étudiant (correction)
@@ -383,6 +363,27 @@ flowchart TD
     |
     └─ Téléchargement du fichier de correction
        (selon la logique définie par l’enseignant)
+```
+```mermaid
+flowchart TD
+    Enseignant[Enseignant]
+
+    Enseignant --> AEScorr[AES optionnel]
+    AEScorr --> fichierCorrectionChiffre[fichierCorrectionChiffre]
+
+    fichierCorrectionChiffre --> hashCorrection[fichierCorrectionHash_SHA256]
+
+    Enseignant --> Blockchain[Blockchain]
+
+    Blockchain --> note[note]
+    Blockchain --> commentaire[commentaire]
+    Blockchain --> hashCorrection
+    Blockchain --> fichierCorrectionNom[fichierCorrectionNom]
+    Blockchain --> fichierCorrectionURI[fichierCorrectionURI]
+
+    Blockchain --> Etudiant[Etudiant]
+    Etudiant --> telechargement[Telechargement correction]
+
 ```
 **Points de sécurité importants**
 
