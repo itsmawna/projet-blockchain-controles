@@ -538,6 +538,144 @@ systeme-gestion-controles-blockchain/
 └── README.md
 ```
 
+## Hardhat + MetaMask : Configuration (étapes réelles du projet)
+
+Cette section décrit **exactement** ce qui a été fait pour :
+- configurer Hardhat (réseau local),
+- déployer le contrat,
+- connecter MetaMask,
+- relier le Frontend React au smart contract via Ethers.js.
+
+---
+
+## 1. Pourquoi Hardhat ?
+
+Hardhat est utilisé dans ce projet pour :
+
+- **Compiler** le smart contract Solidity
+- **Lancer une blockchain locale** (Hardhat Node) gratuite avec comptes pré-chargés en ETH fictif
+- **Déployer** automatiquement le contrat sur ce réseau local
+- **Exécuter des tests** unitaires & d’intégration (Hardhat test)
+- **Mesurer le gas** (Hardhat Gas Reporter)
+
+L’avantage principal : développement rapide **sans coût réel** (pas besoin de testnet pour coder et tester).
+
+---
+
+## 2. Démarrage de la blockchain locale (Hardhat Node)
+
+Dans un premier terminal :
+
+```bash
+npx hardhat node
+```
+Hardhat affiche alors :
+- des adresses Ethereum (accounts)
+- leurs clés privées
+- l’ETH fictif pour tester les transactions
+
+3. Déploiement du contrat (script Hardhat)
+Dans un deuxième terminal (avec le node Hardhat déjà lancé) :
+
+```bash
+npx hardhat run scripts/deploy.js --network localhost
+```
+Script utilisé (déploiement + sauvegarde adresse)
+Le script scripts/deploy.js :
+
+- récupère le compte deployer : hre.ethers.getSigners()
+- déploie SystemeGestionControles
+- affiche l’adresse du contrat
+- enregistre les infos dans contract-address.json
+
+Exemple de sortie attendue :
+```text
+Contrat déployé à l'adresse: 0x...
+
+Administrateur: 0x...(deployer)
+
+Réseau: localhost
+
+Adresse du contrat sauvegardée dans contract-address.json
+```
+Fichier généré automatiquement :
+
+```json
+{
+  "address": "0x.....",
+  "network": "localhost",
+  "deployer": "0x....",
+  "deploymentTime": "2025-12-27T..."
+}
+```
+4. Configuration MetaMask (réseau Hardhat Local)
+Comme le contrat est sur une blockchain locale, MetaMask doit être connecté au même réseau.
+
+- Ajouter un réseau dans MetaMask
+Dans MetaMask → Settings → Networks → Add network :
+
+<p align="center">
+  <img src="images\hardhat.png" width="500">
+</p>
+
+
+5. Importer un compte Hardhat dans MetaMask
+Hardhat Node affiche les comptes + clés privées.
+
+Exemple (dans le terminal Hardhat) :
+```bash
+Account #0: 0x...
+
+Private Key: 0x...
+```
+Dans MetaMask :
+
+**Import Account* : 
+
+coller la Private Key du compte choisi
+<p align="center">
+  <img src="images\prv.png" width="500">
+</p>
+
+Ce compte devient un utilisateur du système :
+
+- Account #0 : souvent utilisé comme Admin (deployer)
+- autres comptes : enseignants / étudiants
+
+
+6. Lier l’adresse du contrat au Frontend React
+Une fois déployé, l’adresse du contrat doit être utilisée dans React.
+
+Dans App.jsx :
+
+```js
+const CONTRACT_ADDRESS = "0x......";
+```
+Cette adresse doit correspondre à contract-address.json (généré par deploy.js).
+
+7. Connexion MetaMask dans React (Ethers.js)
+Lors du clic sur Connecter Wallet, l’application :
+- demande l’accès au wallet MetaMask
+- récupère provider + signer
+- vérifie le réseau (chainId = 31337)
+- crée l’instance du contrat
+
+**Toutes les transactions sont signées via MetaMask.**
+
+8. Pourquoi msg.sender est important (identité utilisateur)
+Dans Solidity, msg.sender représente l’adresse Ethereum du wallet connecté.
+
+Dans ce projet :
+
+l’adresse admin = deployer
+
+l’enseignant et l’étudiant sont identifiés par leur wallet
+
+une soumission est automatiquement liée à l’étudiant qui l’a envoyée (adresse on-chain)
+
+**Donc pas besoin de login/password** :
+MetaMask = authentification + signature.
+
 ## 📊 Fonctionnalités du Smart Contract
 
 ## 🧩 Fonctions Smart Contract (résumé)
