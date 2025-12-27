@@ -412,18 +412,105 @@ Chaque soumission inclut :
 
 → Même avec les mêmes réponses, les textes chiffrés sont différents
 
-## 🧪 Tests
+## ✅ Tests (Hardhat) — Résultats d’exécution
 
-```bash
-# Exécuter tous les tests
-npx hardhat test
+Les tests unitaires et d’intégration du smart contract **SystemeGestionControles** ont été exécutés avec succès via Hardhat.
 
-# Avec coverage
-npx hardhat coverage
+### 🧪 Commande utilisée
 
-# Tests spécifiques
+```powershell
 npx hardhat test test/SystemeGestionControles.test.js
 ```
+### Résultat (tout a bien passé)
+```text
+SystemeGestionControles (MAX TESTS) - NEW CONTRACT
+  Déploiement
+    ✔ Admin = deployer
+    ✔ Compteurs init à 0
+  Inscriptions (Admin)
+    ✔ Admin inscrit enseignant (sans clé)
+    ✔ Event EnseignantInscrit(moduleId=0)
+    ✔ Revert si adresse 0 enseignant
+    ✔ Revert si enseignant déjà inscrit
+    ✔ Non-admin ne peut pas inscrire enseignant
+    ✔ Admin inscrit étudiant (sans clé RSA)
+    ✔ Event EtudiantInscrit
+    ✔ Revert si adresse 0 étudiant
+    ✔ Revert si étudiant déjà inscrit
+    ✔ Non-admin ne peut pas inscrire étudiant
+    ✔ estEnseignant / estEtudiant
+  Clé publique prof (Self-service)
+    ✔ Enseignant définit clé (ok + event)
+    ✔ Revert clé vide enseignant
+    ✔ Non-enseignant ne peut pas définir clé enseignant
+  Modules (Admin)
+    ✔ Créer module OK + event + module attaché au prof
+    ✔ Revert si coefficient invalide
+    ✔ Revert si adresse enseignant invalide
+    ✔ Revert si enseignant non actif
+    ✔ Revert si prof a déjà un module
+    ✔ Non-admin ne peut pas créer module
+    ✔ obtenirModules retourne la liste
+  Affectation étudiants aux modules (Admin)
+    ✔ Affecter étudiant -> module OK + event + lecture
+    ✔ Revert si module inexistant
+    ✔ Revert si adresse etudiant invalide
+    ✔ Revert si étudiant non actif
+    ✔ Revert si déjà inscrit
+    ✔ Non-admin ne peut pas affecter
+    ✔ Un étudiant peut être affecté à plusieurs modules
+  Devoirs (Enseignant)
+    ✔ Créer devoir OK + event + champs
+    ✔ Revert si module inexistant
+    ✔ Revert si date limite invalide
+    ✔ Revert si pas le prof du module
+    ✔ Non-enseignant ne peut pas créer devoir
+    ✔ obtenirTousLesDevoirs retourne IDs
+    ✔ obtenirDevoir d'un id non créé retourne id=0 (sans revert)
+  Soumissions (Etudiant)
+    ✔ Soumettre OK + event + stockage + aDejaSoumis
+    ✔ Revert si devoir inexistant (devoirExiste)
+    ✔ Revert si date limite dépassée
+    ✔ Revert si non-étudiant soumet
+    ✔ Revert si étudiant pas inscrit au module du devoir
+    ✔ Revert si double soumission
+    ✔ Stockage soumissionsParDevoir
+    ✔ Stockage soumissionsParEtudiant
+    ✔ Soumission contient fichierCorrection vide au début
+  Corrections (Enseignant)
+    ✔ Corriger OK (note <=20) + event + fichier correction
+    ✔ Note 0 acceptée
+    ✔ Revert si note > 20
+    ✔ Revert si soumission inexistante
+    ✔ Revert si autre enseignant corrige
+    ✔ Revert si non-enseignant corrige
+  obtenirNotesEtudiant()
+    ✔ Retourne (soumissionIds, notes, moduleIds) cohérents
+    ✔ Si étudiant n'a aucune soumission => tableaux vides
+  Annonces
+    ✔ Prof publie annonce OK + event
+    ✔ Etudiant publie annonce OK
+    ✔ Non-inscrit ne peut pas publier
+  Intégration complète (happy path)
+    ✔ Flux complet : inscriptions -> module -> affectation -> devoir -> soumission -> correction
+
+58 passing (4s)
+```
+### Rapport Gas (Hardhat Gas Reporter)
+Un rapport d’estimation du gas a également été généré automatiquement, permettant d’avoir une vision claire des coûts d’exécution des principales fonctions du contrat.
+
+Extraits (moyenne)
+**soumettreDevoir** : ~495,817 gas (avg)
+
+**creerDevoir** : ~297,684 gas (avg)
+
+**creerModule** : ~195,582 gas (avg)
+
+**corrigerSoumission** : ~166,842 gas (avg)
+
+**Déploiement du contrat** : ~3,989,502 gas (≈ 13.3% du block gas limit)
+
+Tous les tests ont été validés avec succès et le rapport gas est disponible dans la sortie Hardhat.
 
 
 ## 📁 Structure du Projet

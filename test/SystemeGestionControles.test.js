@@ -2,29 +2,91 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
-describe("SystemeGestionControles", function () {
+/**
+ * ✅ TESTS ADAPTÉS AU NOUVEAU CONTRAT
+ * - ❌ suppression totale des tests de definirClePubliqueEtudiant + clePublique étudiant (car elle n'existe plus)
+ * - ✅ le reste reste identique : modules, affectations, devoirs, soumissions, corrections, annonces
+ */
+
+describe("SystemeGestionControles (MAX TESTS) - NEW CONTRACT", function () {
   let systeme;
   let admin, enseignant1, enseignant2, etudiant1, etudiant2, nonInscrit;
 
+  async function deployFresh() {
+    const SystemeGestionControles = await ethers.getContractFactory("SystemeGestionControles");
+    const c = await SystemeGestionControles.deploy();
+    return c;
+  }
+
+  async function setupProfEtudiants() {
+    await systeme.inscrireEnseignant(enseignant1.address, "Prof. Ahmed");
+    await systeme.inscrireEnseignant(enseignant2.address, "Prof. Fatima");
+
+    await systeme.inscrireEtudiant(etudiant1.address, "Ahmed Benali", "BDIA2025001");
+    await systeme.inscrireEtudiant(etudiant2.address, "Fatima Zahra", "BDIA2025002");
+  }
+
+  async function setupModule1WithProf1() {
+    await systeme.creerModule("Blockchain", 2, enseignant1.address);
+  }
+
+  async function setupModule2WithProf2() {
+    await systeme.creerModule("IA", 3, enseignant2.address);
+  }
+
+  async function createDevoir(moduleId, profSigner, titre = "Devoir", desc = "Desc") {
+    const now = await time.latest();
+    const dateLimite = Number(now) + 86400;
+    await systeme.connect(profSigner).creerDevoir(
+      moduleId,
+      titre,
+      desc,
+      "PUB_KEY_DEVOIR",
+      dateLimite
+    );
+    return { devoirId: await systeme.compteurDevoirs(), dateLimite };
+  }
+
+  async function submit(devoirId, etuSigner, payload = {}) {
+    const args = {
+      contenu: payload.contenu ?? "CONTENU_CHIFFRE",
+      identite: payload.identite ?? "IDENTITE_CHIFFREE",
+      hash: payload.hash ?? "HASH_FILE",
+      nom: payload.nom ?? "soumission.pdf",
+      type: payload.type ?? "application/pdf",
+      uri: payload.uri ?? "ipfs://cid",
+      aes: payload.aes ?? "AES_KEY_CHIFFREE",
+    };
+
+    await systeme.connect(etuSigner).soumettreDevoir(
+      devoirId,
+      args.contenu,
+      args.identite,
+      args.hash,
+      args.nom,
+      args.type,
+      args.uri,
+      args.aes
+    );
+    return await systeme.compteurSoumissions();
+  }
+
   beforeEach(async function () {
-    // Récupérer les signers
     [admin, enseignant1, enseignant2, etudiant1, etudiant2, nonInscrit] =
       await ethers.getSigners();
-
-    // Déployer le contrat
-    const SystemeGestionControles = await ethers.getContractFactory("SystemeGestionControles");
-    systeme = await SystemeGestionControles.deploy();
+    systeme = await deployFresh();
   });
 
   // =====================================================
-  //   DEPLOIEMENT
+  // DEPLOIEMENT
   // =====================================================
   describe("Déploiement", function () {
-    it("Devrait définir le bon administrateur", async function () {
+    it("Admin = deployer", async function () {
       expect(await systeme.administrateur()).to.equal(admin.address);
     });
 
-    it("Devrait initialiser les compteurs à zéro", async function () {
+    it("Compteurs init à 0", async function () {
+      expect(await systeme.compteurModules()).to.equal(0);
       expect(await systeme.compteurDevoirs()).to.equal(0);
       expect(await systeme.compteurSoumissions()).to.equal(0);
       expect(await systeme.compteurAnnonces()).to.equal(0);
@@ -32,571 +94,745 @@ describe("SystemeGestionControles", function () {
   });
 
   // =====================================================
-  //   GESTION DES ENSEIGNANTS
+  // INSCRIPTIONS
   // =====================================================
-  describe("Gestion des Enseignants", function () {
-    it("Devrait permettre à l'admin d'inscrire un enseignant", async function () {
-      await systeme.inscrireEnseignant(
-        enseignant1.address,
-        "Prof. Ahmed",
-        "PUBLIC_KEY_123"
-      );
-
-      const enseignant = await systeme.enseignants(enseignant1.address);
-      expect(enseignant.nom).to.equal("Prof. Ahmed");
-      expect(enseignant.clePublique).to.equal("PUBLIC_KEY_123");
-      expect(enseignant.estActif).to.be.true;
+  describe("Inscriptions (Admin)", function () {
+    it("Admin inscrit enseignant (sans clé)", async function () {
+      await systeme.inscrireEnseignant(enseignant1.address, "Prof. Ahmed");
+      const prof = await systeme.enseignants(enseignant1.address);
+      expect(prof.nom).to.equal("Prof. Ahmed");
+      expect(prof.clePublique).to.equal("");
+      expect(prof.estActif).to.equal(true);
+      expect(prof.moduleId).to.equal(0);
+      expect(prof.dateInscription).to.be.gt(0);
     });
 
-    it("Devrait émettre un événement lors de l'inscription", async function () {
-      await expect(
-        systeme.inscrireEnseignant(
-          enseignant1.address,
-          "Prof. Ahmed",
-          "PUBLIC_KEY_123"
-        )
-      ).to.emit(systeme, "EnseignantInscrit")
-        .withArgs(enseignant1.address, "Prof. Ahmed");
+    it("Event EnseignantInscrit(moduleId=0)", async function () {
+      await expect(systeme.inscrireEnseignant(enseignant1.address, "Prof. Ahmed"))
+        .to.emit(systeme, "EnseignantInscrit")
+        .withArgs(enseignant1.address, "Prof. Ahmed", 0);
     });
 
-    it("Ne devrait pas permettre à un non-admin d'inscrire un enseignant", async function () {
+    it("Revert si adresse 0 enseignant", async function () {
       await expect(
-        systeme.connect(nonInscrit).inscrireEnseignant(
-          enseignant1.address,
-          "Prof. Ahmed",
-          "PUBLIC_KEY_123"
-        )
-      ).to.be.revertedWith("Seul l'administrateur peut executer cette action");
+        systeme.inscrireEnseignant(ethers.ZeroAddress, "Prof")
+      ).to.be.revertedWith("Adresse invalide");
     });
 
-    it("Ne devrait pas permettre d'inscrire deux fois le même enseignant", async function () {
-      await systeme.inscrireEnseignant(
-        enseignant1.address,
-        "Prof. Ahmed",
-        "PUBLIC_KEY_123"
-      );
-
+    it("Revert si enseignant déjà inscrit", async function () {
+      await systeme.inscrireEnseignant(enseignant1.address, "Prof. Ahmed");
       await expect(
-        systeme.inscrireEnseignant(
-          enseignant1.address,
-          "Prof. Ahmed Bis",
-          "PUBLIC_KEY_456"
-        )
+        systeme.inscrireEnseignant(enseignant1.address, "Prof X")
       ).to.be.revertedWith("Enseignant deja inscrit");
     });
 
-    it("Devrait retourner true pour estEnseignant", async function () {
-      await systeme.inscrireEnseignant(
-        enseignant1.address,
-        "Prof. Ahmed",
-        "PUBLIC_KEY_123"
-      );
-
-      expect(await systeme.estEnseignant(enseignant1.address)).to.be.true;
-      expect(await systeme.estEnseignant(etudiant1.address)).to.be.false;
-    });
-  });
-
-  // =====================================================
-  //   GESTION DES ETUDIANTS
-  // =====================================================
-  describe("Gestion des Étudiants", function () {
-    it("Devrait permettre à l'admin d'inscrire un étudiant", async function () {
-      await systeme.inscrireEtudiant(
-        etudiant1.address,
-        "Ahmed Benali",
-        "BDIA2025001"
-      );
-
-      const etudiant = await systeme.etudiants(etudiant1.address);
-      expect(etudiant.nom).to.equal("Ahmed Benali");
-      expect(etudiant.numeroEtudiant).to.equal("BDIA2025001");
-      expect(etudiant.estActif).to.be.true;
-    });
-
-    it("Devrait émettre un événement lors de l'inscription", async function () {
+    it("Non-admin ne peut pas inscrire enseignant", async function () {
       await expect(
-        systeme.inscrireEtudiant(
-          etudiant1.address,
-          "Ahmed Benali",
-          "BDIA2025001"
-        )
-      ).to.emit(systeme, "EtudiantInscrit")
-        .withArgs(etudiant1.address, "Ahmed Benali", "BDIA2025001");
-    });
-
-    it("Ne devrait pas permettre à un non-admin d'inscrire un étudiant", async function () {
-      await expect(
-        systeme.connect(nonInscrit).inscrireEtudiant(
-          etudiant1.address,
-          "Ahmed Benali",
-          "BDIA2025001"
-        )
+        systeme.connect(nonInscrit).inscrireEnseignant(enseignant1.address, "Prof")
       ).to.be.revertedWith("Seul l'administrateur peut executer cette action");
     });
 
-    it("Devrait retourner true pour estEtudiant", async function () {
-      await systeme.inscrireEtudiant(
-        etudiant1.address,
-        "Ahmed Benali",
-        "BDIA2025001"
-      );
+    it("Admin inscrit étudiant (sans clé RSA)", async function () {
+      await systeme.inscrireEtudiant(etudiant1.address, "Ahmed", "BDIA2025001");
+      const etu = await systeme.etudiants(etudiant1.address);
+      expect(etu.nom).to.equal("Ahmed");
+      expect(etu.numeroEtudiant).to.equal("BDIA2025001");
+      // ✅ plus de etu.clePublique dans le nouveau contrat
+      expect(etu.estActif).to.equal(true);
+      expect(etu.dateInscription).to.be.gt(0);
+    });
 
-      expect(await systeme.estEtudiant(etudiant1.address)).to.be.true;
-      expect(await systeme.estEtudiant(enseignant1.address)).to.be.false;
+    it("Event EtudiantInscrit", async function () {
+      await expect(systeme.inscrireEtudiant(etudiant1.address, "Ahmed", "BDIA2025001"))
+        .to.emit(systeme, "EtudiantInscrit")
+        .withArgs(etudiant1.address, "Ahmed", "BDIA2025001");
+    });
+
+    it("Revert si adresse 0 étudiant", async function () {
+      await expect(
+        systeme.inscrireEtudiant(ethers.ZeroAddress, "Etu", "X")
+      ).to.be.revertedWith("Adresse invalide");
+    });
+
+    it("Revert si étudiant déjà inscrit", async function () {
+      await systeme.inscrireEtudiant(etudiant1.address, "Ahmed", "BDIA2025001");
+      await expect(
+        systeme.inscrireEtudiant(etudiant1.address, "Ahmed2", "BDIA2")
+      ).to.be.revertedWith("Etudiant deja inscrit");
+    });
+
+    it("Non-admin ne peut pas inscrire étudiant", async function () {
+      await expect(
+        systeme.connect(nonInscrit).inscrireEtudiant(etudiant1.address, "Ahmed", "BDIA2025001")
+      ).to.be.revertedWith("Seul l'administrateur peut executer cette action");
+    });
+
+    it("estEnseignant / estEtudiant", async function () {
+      await systeme.inscrireEnseignant(enseignant1.address, "Prof");
+      await systeme.inscrireEtudiant(etudiant1.address, "Etu", "N1");
+      expect(await systeme.estEnseignant(enseignant1.address)).to.equal(true);
+      expect(await systeme.estEnseignant(etudiant1.address)).to.equal(false);
+      expect(await systeme.estEtudiant(etudiant1.address)).to.equal(true);
+      expect(await systeme.estEtudiant(enseignant1.address)).to.equal(false);
     });
   });
 
   // =====================================================
-  //   GESTION DES DEVOIRS
+  // CLE PUBLIQUE PROF (SELF-SERVICE)
   // =====================================================
-  describe("Gestion des Devoirs", function () {
+  describe("Clé publique prof (Self-service)", function () {
     beforeEach(async function () {
-      // Inscrire un enseignant
-      await systeme.inscrireEnseignant(
-        enseignant1.address,
-        "Prof. Ahmed",
-        "PUBLIC_KEY_123"
-      );
+      await systeme.inscrireEnseignant(enseignant1.address, "Prof. Ahmed");
+      await systeme.inscrireEtudiant(etudiant1.address, "Ahmed", "BDIA2025001");
     });
 
-    it("Devrait permettre à un enseignant de créer un devoir", async function () {
-      const dateLimite = Math.floor(Date.now() / 1000) + 86400; // +24h
+    it("Enseignant définit clé (ok + event)", async function () {
+      await expect(systeme.connect(enseignant1).definirClePubliqueEnseignant("RSA_PROF"))
+        .to.emit(systeme, "ClePubliqueEnseignantMiseAJour")
+        .withArgs(enseignant1.address);
 
-      await systeme.connect(enseignant1).creerDevoir(
-        "Contrôle Blockchain",
-        "Questions sur les smart contracts",
-        "PUBLIC_KEY_DEVOIR",
-        dateLimite
-      );
-
-      expect(await systeme.compteurDevoirs()).to.equal(1);
-
-      const devoir = await systeme.obtenirDevoir(1);
-      expect(devoir.titre).to.equal("Contrôle Blockchain");
-      expect(devoir.enseignant).to.equal(enseignant1.address);
-      expect(devoir.estActif).to.be.true;
+      const prof = await systeme.enseignants(enseignant1.address);
+      expect(prof.clePublique).to.equal("RSA_PROF");
     });
 
-    it("Devrait émettre un événement lors de la création", async function () {
-      const dateLimite = Math.floor(Date.now() / 1000) + 86400;
-
+    it("Revert clé vide enseignant", async function () {
       await expect(
-        systeme.connect(enseignant1).creerDevoir(
-          "Contrôle Blockchain",
-          "Questions sur les smart contracts",
-          "PUBLIC_KEY_DEVOIR",
-          dateLimite
-        )
-      ).to.emit(systeme, "DevoirCree")
-        .withArgs(1, enseignant1.address, "Contrôle Blockchain");
+        systeme.connect(enseignant1).definirClePubliqueEnseignant("")
+      ).to.be.revertedWith("Cle publique vide");
     });
 
-    it("Ne devrait pas permettre à un non-enseignant de créer un devoir", async function () {
-      const dateLimite = Math.floor(Date.now() / 1000) + 86400;
-
+    it("Non-enseignant ne peut pas définir clé enseignant", async function () {
       await expect(
-        systeme.connect(nonInscrit).creerDevoir(
-          "Contrôle Blockchain",
-          "Questions",
-          "PUBLIC_KEY",
-          dateLimite
-        )
+        systeme.connect(etudiant1).definirClePubliqueEnseignant("X")
       ).to.be.revertedWith("Seul un enseignant peut executer cette action");
     });
 
-    it("Ne devrait pas accepter une date limite passée", async function () {
-      const datePassee = Math.floor(Date.now() / 1000) - 3600; // -1h
+  });
 
-      await expect(
-        systeme.connect(enseignant1).creerDevoir(
-          "Contrôle Blockchain",
-          "Questions",
-          "PUBLIC_KEY",
-          datePassee
-        )
-      ).to.be.revertedWith("La date limite doit etre dans le futur");
+  // =====================================================
+  // MODULES
+  // =====================================================
+  describe("Modules (Admin)", function () {
+    beforeEach(async function () {
+      await systeme.inscrireEnseignant(enseignant1.address, "Prof. Ahmed");
+      await systeme.inscrireEnseignant(enseignant2.address, "Prof. Fatima");
     });
 
-    it("Devrait retourner la liste de tous les devoirs", async function () {
-      const dateLimite = Math.floor(Date.now() / 1000) + 86400;
+    it("Créer module OK + event + module attaché au prof", async function () {
+      await expect(systeme.creerModule("Blockchain", 2, enseignant1.address))
+        .to.emit(systeme, "ModuleCree")
+        .withArgs(1, "Blockchain", 2, enseignant1.address);
 
-      await systeme.connect(enseignant1).creerDevoir(
-        "Devoir 1",
-        "Description 1",
-        "KEY1",
-        dateLimite
-      );
+      expect(await systeme.compteurModules()).to.equal(1);
 
-      await systeme.connect(enseignant1).creerDevoir(
-        "Devoir 2",
-        "Description 2",
-        "KEY2",
-        dateLimite
-      );
+      const m = await systeme.modules(1);
+      expect(m.id).to.equal(1);
+      expect(m.nom).to.equal("Blockchain");
+      expect(m.coefficient).to.equal(2);
+      expect(m.enseignant).to.equal(enseignant1.address);
+      expect(m.estActif).to.equal(true);
 
-      const devoirs = await systeme.obtenirTousLesDevoirs();
-      expect(devoirs.length).to.equal(2);
+      const prof = await systeme.enseignants(enseignant1.address);
+      expect(prof.moduleId).to.equal(1);
+    });
+
+    it("Revert si coefficient invalide", async function () {
+      await expect(
+        systeme.creerModule("X", 0, enseignant1.address)
+      ).to.be.revertedWith("Coefficient invalide");
+    });
+
+    it("Revert si adresse enseignant invalide", async function () {
+      await expect(
+        systeme.creerModule("X", 1, ethers.ZeroAddress)
+      ).to.be.revertedWith("Adresse enseignant invalide");
+    });
+
+    it("Revert si enseignant non actif", async function () {
+      await expect(
+        systeme.creerModule("X", 1, nonInscrit.address)
+      ).to.be.revertedWith("Enseignant non actif");
+    });
+
+    it("Revert si prof a déjà un module", async function () {
+      await systeme.creerModule("Blockchain", 2, enseignant1.address);
+      await expect(
+        systeme.creerModule("IA", 3, enseignant1.address)
+      ).to.be.revertedWith("Ce prof a deja un module");
+    });
+
+    it("Non-admin ne peut pas créer module", async function () {
+      await expect(
+        systeme.connect(nonInscrit).creerModule("X", 1, enseignant1.address)
+      ).to.be.revertedWith("Seul l'administrateur peut executer cette action");
+    });
+
+    it("obtenirModules retourne la liste", async function () {
+      await systeme.creerModule("Blockchain", 2, enseignant1.address);
+      await systeme.creerModule("IA", 3, enseignant2.address);
+
+      const arr = await systeme.obtenirModules();
+      expect(arr.length).to.equal(2);
+      expect(arr[0].id).to.equal(1);
+      expect(arr[1].id).to.equal(2);
     });
   });
 
   // =====================================================
-  //   GESTION DES SOUMISSIONS
+  // AFFECTATION ETUDIANTS -> MODULE
   // =====================================================
-  describe("Gestion des Soumissions", function () {
-    let devoirId;
-    let dateLimite;
+  describe("Affectation étudiants aux modules (Admin)", function () {
+    beforeEach(async function () {
+      await setupProfEtudiants();
+      await setupModule1WithProf1(); // module 1
+      await setupModule2WithProf2(); // module 2
+    });
+
+    it("Affecter étudiant -> module OK + event + lecture", async function () {
+      await expect(systeme.affecterEtudiantAuModule(1, etudiant1.address))
+        .to.emit(systeme, "EtudiantAffecteModule")
+        .withArgs(1, etudiant1.address);
+
+      expect(await systeme.estInscritDansModule(1, etudiant1.address)).to.equal(true);
+
+      const list = await systeme.obtenirEtudiantsModule(1);
+      expect(list.length).to.equal(1);
+      expect(list[0]).to.equal(etudiant1.address);
+    });
+
+    it("Revert si module inexistant", async function () {
+      await expect(
+        systeme.affecterEtudiantAuModule(999, etudiant1.address)
+      ).to.be.revertedWith("Module inexistant");
+    });
+
+    it("Revert si adresse etudiant invalide", async function () {
+      await expect(
+        systeme.affecterEtudiantAuModule(1, ethers.ZeroAddress)
+      ).to.be.revertedWith("Adresse etudiant invalide");
+    });
+
+    it("Revert si étudiant non actif", async function () {
+      await expect(
+        systeme.affecterEtudiantAuModule(1, nonInscrit.address)
+      ).to.be.revertedWith("Etudiant non actif");
+    });
+
+    it("Revert si déjà inscrit", async function () {
+      await systeme.affecterEtudiantAuModule(1, etudiant1.address);
+      await expect(
+        systeme.affecterEtudiantAuModule(1, etudiant1.address)
+      ).to.be.revertedWith("Deja inscrit au module");
+    });
+
+    it("Non-admin ne peut pas affecter", async function () {
+      await expect(
+        systeme.connect(nonInscrit).affecterEtudiantAuModule(1, etudiant1.address)
+      ).to.be.revertedWith("Seul l'administrateur peut executer cette action");
+    });
+
+    it("Un étudiant peut être affecté à plusieurs modules", async function () {
+      await systeme.affecterEtudiantAuModule(1, etudiant1.address);
+      await systeme.affecterEtudiantAuModule(2, etudiant1.address);
+
+      expect(await systeme.estInscritDansModule(1, etudiant1.address)).to.equal(true);
+      expect(await systeme.estInscritDansModule(2, etudiant1.address)).to.equal(true);
+    });
+  });
+
+  // =====================================================
+  // DEVOIRS
+  // =====================================================
+  describe("Devoirs (Enseignant)", function () {
+    beforeEach(async function () {
+      await setupProfEtudiants();
+      await setupModule1WithProf1(); // module 1 prof1
+      await setupModule2WithProf2(); // module 2 prof2
+    });
+
+    it("Créer devoir OK + event + champs", async function () {
+      const now = await time.latest();
+      const dateLimite = Number(now) + 86400;
+
+      await expect(
+        systeme.connect(enseignant1).creerDevoir(
+          1,
+          "Contrôle Blockchain",
+          "Questions",
+          "PUB_KEY_DEVOIR",
+          dateLimite
+        )
+      )
+        .to.emit(systeme, "DevoirCree")
+        .withArgs(1, enseignant1.address, "Contrôle Blockchain", 1);
+
+      expect(await systeme.compteurDevoirs()).to.equal(1);
+      const d = await systeme.obtenirDevoir(1);
+      expect(d.id).to.equal(1);
+      expect(d.enseignant).to.equal(enseignant1.address);
+      expect(d.moduleId).to.equal(1);
+      expect(d.titre).to.equal("Contrôle Blockchain");
+      expect(d.estActif).to.equal(true);
+      expect(d.dateCreation).to.be.gt(0);
+    });
+
+    it("Revert si module inexistant", async function () {
+      const now = await time.latest();
+      const dateLimite = Number(now) + 86400;
+
+      await expect(
+        systeme.connect(enseignant1).creerDevoir(999, "T", "D", "K", dateLimite)
+      ).to.be.revertedWith("Module inexistant");
+    });
+
+    it("Revert si date limite invalide", async function () {
+      const now = await time.latest();
+      await expect(
+        systeme.connect(enseignant1).creerDevoir(1, "T", "D", "K", Number(now))
+      ).to.be.revertedWith("Date limite invalide");
+    });
+
+    it("Revert si pas le prof du module", async function () {
+      const now = await time.latest();
+      const dateLimite = Number(now) + 86400;
+
+      await expect(
+        systeme.connect(enseignant1).creerDevoir(2, "T", "D", "K", dateLimite)
+      ).to.be.revertedWith("Pas le prof de ce module");
+    });
+
+    it("Non-enseignant ne peut pas créer devoir", async function () {
+      const now = await time.latest();
+      const dateLimite = Number(now) + 86400;
+
+      await expect(
+        systeme.connect(nonInscrit).creerDevoir(1, "T", "D", "K", dateLimite)
+      ).to.be.revertedWith("Seul un enseignant peut executer cette action");
+    });
+
+    it("obtenirTousLesDevoirs retourne IDs", async function () {
+      await createDevoir(1, enseignant1, "D1");
+      await createDevoir(1, enseignant1, "D2");
+      const ids = await systeme.obtenirTousLesDevoirs();
+      expect(ids.length).to.equal(2);
+      expect(ids[0]).to.equal(1);
+      expect(ids[1]).to.equal(2);
+    });
+
+    it("obtenirDevoir d'un id non créé retourne id=0 (sans revert)", async function () {
+      const d = await systeme.obtenirDevoir(999);
+      expect(d.id).to.equal(0);
+    });
+  });
+
+  // =====================================================
+  // SOUMISSIONS
+  // =====================================================
+  describe("Soumissions (Etudiant)", function () {
+    let devoirId, dateLimite;
 
     beforeEach(async function () {
-      // Inscrire enseignant et étudiant
-      await systeme.inscrireEnseignant(
-        enseignant1.address,
-        "Prof. Ahmed",
-        "PUBLIC_KEY_123"
-      );
+      await setupProfEtudiants();
+      await setupModule1WithProf1(); // module 1
+      await systeme.affecterEtudiantAuModule(1, etudiant1.address);
+      await systeme.affecterEtudiantAuModule(1, etudiant2.address);
 
-      await systeme.inscrireEtudiant(
-        etudiant1.address,
-        "Ahmed Benali",
-        "BDIA2025001"
-      );
-
-      // Créer un devoir avec le temps on-chain
-      const now = await time.latest();
-      dateLimite = Number(now) + 86400;
-
-      await systeme.connect(enseignant1).creerDevoir(
-        "Contrôle Blockchain",
-        "Questions sur les smart contracts",
-        "PUBLIC_KEY_DEVOIR",
-        dateLimite
-      );
-
-      devoirId = 1;
+      const res = await createDevoir(1, enseignant1, "Devoir Blockchain");
+      devoirId = Number(res.devoirId);
+      dateLimite = Number(res.dateLimite);
     });
 
-    it("Devrait permettre à un étudiant de soumettre un devoir", async function () {
-      await systeme.connect(etudiant1).soumettreDevoir(
-        devoirId,
-        "CONTENU_CHIFFRE_ABC",
-        "IDENTITE_CHIFFREE_123"
-      );
-
-      expect(await systeme.compteurSoumissions()).to.equal(1);
-
-      const soumission = await systeme.obtenirSoumission(1);
-      expect(soumission.etudiant).to.equal(etudiant1.address);
-      expect(soumission.devoirId).to.equal(devoirId);
-      expect(soumission.contenuChiffre).to.equal("CONTENU_CHIFFRE_ABC");
-    });
-
-    it("Devrait émettre un événement lors de la soumission", async function () {
+    it("Soumettre OK + event + stockage + aDejaSoumis", async function () {
       await expect(
         systeme.connect(etudiant1).soumettreDevoir(
           devoirId,
-          "CONTENU_CHIFFRE_ABC",
-          "IDENTITE_CHIFFREE_123"
+          "CONTENU",
+          "IDENTITE",
+          "HASH",
+          "a.pdf",
+          "application/pdf",
+          "ipfs://x",
+          "AES"
         )
-      ).to.emit(systeme, "SoumissionEnvoyee")
+      )
+        .to.emit(systeme, "SoumissionEnvoyee")
         .withArgs(1, devoirId, etudiant1.address);
+
+      expect(await systeme.compteurSoumissions()).to.equal(1);
+
+      const s = await systeme.obtenirSoumission(1);
+      expect(s.id).to.equal(1);
+      expect(s.devoirId).to.equal(devoirId);
+      expect(s.moduleId).to.equal(1);
+      expect(s.etudiant).to.equal(etudiant1.address);
+      expect(s.contenuChiffre).to.equal("CONTENU");
+      expect(s.identiteChiffree).to.equal("IDENTITE");
+      expect(s.dateSubmission).to.be.gt(0);
+      expect(s.estCorrige).to.equal(false);
+      expect(s.note).to.equal(0);
+
+      expect(s.fichier.hash).to.equal("HASH");
+      expect(s.fichier.nom).to.equal("a.pdf");
+      expect(s.fichier.fileType).to.equal("application/pdf");
+      expect(s.fichier.uri).to.equal("ipfs://x");
+      expect(s.fichier.cleAESChiffree).to.equal("AES");
+
+      expect(await systeme.aDejaSoumis(devoirId, etudiant1.address)).to.equal(true);
     });
 
-    it("Ne devrait pas permettre à un non-étudiant de soumettre", async function () {
+    it("Revert si devoir inexistant (devoirExiste)", async function () {
+      await expect(
+        systeme.connect(etudiant1).soumettreDevoir(
+          999,
+          "C",
+          "I",
+          "H",
+          "a.pdf",
+          "application/pdf",
+          "uri",
+          "AES"
+        )
+      ).to.be.revertedWith("Le devoir n'existe pas");
+    });
+
+    it("Revert si date limite dépassée", async function () {
+      await time.increaseTo(dateLimite + 1);
+
+      await expect(
+        systeme.connect(etudiant1).soumettreDevoir(
+          devoirId,
+          "C",
+          "I",
+          "H",
+          "a.pdf",
+          "application/pdf",
+          "uri",
+          "AES"
+        )
+      ).to.be.revertedWith("Date limite depassee");
+    });
+
+    it("Revert si non-étudiant soumet", async function () {
       await expect(
         systeme.connect(nonInscrit).soumettreDevoir(
           devoirId,
-          "CONTENU_CHIFFRE_ABC",
-          "IDENTITE_CHIFFREE_123"
+          "C",
+          "I",
+          "H",
+          "a.pdf",
+          "application/pdf",
+          "uri",
+          "AES"
         )
       ).to.be.revertedWith("Seul un etudiant peut executer cette action");
     });
 
-    it("Ne devrait pas accepter de soumission après la date limite", async function () {
-      // Avancer le temps au-delà de la date limite
-      await time.increaseTo(dateLimite + 3600);
+    it("Revert si étudiant pas inscrit au module du devoir", async function () {
+      const [, , , , , outsider] = await ethers.getSigners();
+      await systeme.inscrireEtudiant(outsider.address, "Out", "X");
+      // outsider PAS affecté module 1
 
       await expect(
-        systeme.connect(etudiant1).soumettreDevoir(
+        systeme.connect(outsider).soumettreDevoir(
           devoirId,
-          "CONTENU_CHIFFRE_ABC",
-          "IDENTITE_CHIFFREE_123"
+          "C",
+          "I",
+          "H",
+          "a.pdf",
+          "application/pdf",
+          "uri",
+          "AES"
         )
-      ).to.be.revertedWith("La date limite est depassee");
+      ).to.be.revertedWith("Pas inscrit dans ce module");
     });
 
-    it("Devrait stocker les soumissions par devoir", async function () {
-      await systeme.inscrireEtudiant(
-        etudiant2.address,
-        "Fatima Zahra",
-        "BDIA2025002"
-      );
-
-      await systeme.connect(etudiant1).soumettreDevoir(
-        devoirId,
-        "CONTENU1",
-        "IDENTITE1"
-      );
-
-      await systeme.connect(etudiant2).soumettreDevoir(
-        devoirId,
-        "CONTENU2",
-        "IDENTITE2"
-      );
-
-      const soumissions = await systeme.obtenirSoumissionsDevoir(devoirId);
-      expect(soumissions.length).to.equal(2);
+    it("Revert si double soumission", async function () {
+      await submit(devoirId, etudiant1);
+      await expect(submit(devoirId, etudiant1)).to.be.revertedWith("Deja soumis");
     });
 
-    it("Devrait stocker les soumissions par étudiant", async function () {
-      // On ajoute un deuxième enseignant
-      await systeme.inscrireEnseignant(
-        enseignant2.address,
-        "Prof. Fatima",
-        "PUBLIC_KEY_456"
-      );
+    it("Stockage soumissionsParDevoir", async function () {
+      await submit(devoirId, etudiant1);
+      await submit(devoirId, etudiant2);
 
-      // On récupère le temps on-chain actuel
-      const now2 = await time.latest();
-      const dateLimite2 = Number(now2) + 86400;
+      const ids = await systeme.obtenirSoumissionsDevoir(devoirId);
+      expect(ids.length).to.equal(2);
+      expect(ids[0]).to.equal(1);
+      expect(ids[1]).to.equal(2);
+    });
 
-      // Création du deuxième devoir par le deuxième enseignant
-      await systeme.connect(enseignant2).creerDevoir(
-        "Devoir 2",
-        "Description 2",
-        "KEY2",
-        dateLimite2
-      );
+    it("Stockage soumissionsParEtudiant", async function () {
+      await submit(devoirId, etudiant1);
+      await submit(devoirId, etudiant2);
 
-      // L'étudiant soumet pour les deux devoirs
-      await systeme.connect(etudiant1).soumettreDevoir(
-        devoirId,
-        "CONTENU1",
-        "IDENTITE1"
-      );
+      const ids1 = await systeme.obtenirSoumissionsEtudiant(etudiant1.address);
+      expect(ids1.length).to.equal(1);
+      expect(ids1[0]).to.equal(1);
 
-      await systeme.connect(etudiant1).soumettreDevoir(
-        2,
-        "CONTENU2",
-        "IDENTITE2"
-      );
+      const ids2 = await systeme.obtenirSoumissionsEtudiant(etudiant2.address);
+      expect(ids2.length).to.equal(1);
+      expect(ids2[0]).to.equal(2);
+    });
 
-      const soumissions = await systeme.obtenirSoumissionsEtudiant(etudiant1.address);
-      expect(soumissions.length).to.equal(2);
+    it("Soumission contient fichierCorrection vide au début", async function () {
+      await submit(devoirId, etudiant1);
+      const s = await systeme.obtenirSoumission(1);
+      expect(s.fichierCorrection.hash).to.equal("");
+      expect(s.fichierCorrection.nom).to.equal("");
+      expect(s.fichierCorrection.uri).to.equal("");
     });
   });
 
   // =====================================================
-  //   CORRECTION DES SOUMISSIONS
+  // CORRECTIONS
   // =====================================================
-  describe("Correction des Soumissions", function () {
+  describe("Corrections (Enseignant)", function () {
     let devoirId, soumissionId;
 
     beforeEach(async function () {
-      // Setup complet
-      await systeme.inscrireEnseignant(
-        enseignant1.address,
-        "Prof. Ahmed",
-        "PUBLIC_KEY_123"
-      );
+      await setupProfEtudiants();
+      await setupModule1WithProf1(); // module 1
+      await setupModule2WithProf2(); // module 2
 
-      await systeme.inscrireEtudiant(
-        etudiant1.address,
-        "Ahmed Benali",
-        "BDIA2025001"
-      );
+      await systeme.affecterEtudiantAuModule(1, etudiant1.address);
 
-      const now = await time.latest();
-      const dateLimite = Number(now) + 86400;
+      const res = await createDevoir(1, enseignant1, "Devoir");
+      devoirId = Number(res.devoirId);
 
-      await systeme.connect(enseignant1).creerDevoir(
-        "Contrôle Blockchain",
-        "Questions",
-        "PUBLIC_KEY_DEVOIR",
-        dateLimite
-      );
-
-      devoirId = 1;
-
-      await systeme.connect(etudiant1).soumettreDevoir(
-        devoirId,
-        "CONTENU_CHIFFRE",
-        "IDENTITE_CHIFFREE"
-      );
-
+      await submit(devoirId, etudiant1);
       soumissionId = 1;
     });
 
-    it("Devrait permettre à l'enseignant de corriger", async function () {
-      await systeme.connect(enseignant1).corrigerSoumission(
-        soumissionId,
-        85,
-        "Excellent travail!"
-      );
-
-      const soumission = await systeme.obtenirSoumission(soumissionId);
-      expect(soumission.estCorrige).to.be.true;
-      expect(soumission.note).to.equal(85);
-      expect(soumission.commentaire).to.equal("Excellent travail!");
-    });
-
-    it("Devrait émettre un événement lors de la correction", async function () {
+    it("Corriger OK (note <=20) + event + fichier correction", async function () {
       await expect(
         systeme.connect(enseignant1).corrigerSoumission(
           soumissionId,
-          85,
-          "Excellent travail!"
+          20,
+          "Parfait",
+          "H_CORR",
+          "corr.pdf",
+          "uri-corr"
         )
-      ).to.emit(systeme, "SoumissionCorrigee")
-        .withArgs(soumissionId, 85);
+      )
+        .to.emit(systeme, "SoumissionCorrigee")
+        .withArgs(soumissionId, 20);
+
+      const s = await systeme.obtenirSoumission(soumissionId);
+      expect(s.estCorrige).to.equal(true);
+      expect(s.note).to.equal(20);
+      expect(s.commentaire).to.equal("Parfait");
+      expect(s.fichierCorrection.hash).to.equal("H_CORR");
+      expect(s.fichierCorrection.nom).to.equal("corr.pdf");
+      expect(s.fichierCorrection.uri).to.equal("uri-corr");
     });
 
-    it("Ne devrait pas permettre à un autre enseignant de corriger", async function () {
-      await systeme.inscrireEnseignant(
-        enseignant2.address,
-        "Prof. Fatima",
-        "PUBLIC_KEY_456"
+    it("Note 0 acceptée", async function () {
+      await systeme.connect(enseignant1).corrigerSoumission(
+        soumissionId,
+        0,
+        "0/20",
+        "H",
+        "c.pdf",
+        "uri"
       );
+      const s = await systeme.obtenirSoumission(soumissionId);
+      expect(s.note).to.equal(0);
+      expect(s.estCorrige).to.equal(true);
+    });
 
+    it("Revert si note > 20", async function () {
+      await expect(
+        systeme.connect(enseignant1).corrigerSoumission(
+          soumissionId,
+          21,
+          "Bad",
+          "H",
+          "c.pdf",
+          "uri"
+        )
+      ).to.be.revertedWith("Note invalide (0..20)");
+    });
+
+    it("Revert si soumission inexistante", async function () {
+      await expect(
+        systeme.connect(enseignant1).corrigerSoumission(
+          999,
+          10,
+          "X",
+          "H",
+          "c.pdf",
+          "uri"
+        )
+      ).to.be.revertedWith("Soumission inexistante");
+    });
+
+    it("Revert si autre enseignant corrige", async function () {
       await expect(
         systeme.connect(enseignant2).corrigerSoumission(
           soumissionId,
-          85,
-          "Commentaire"
+          10,
+          "X",
+          "H",
+          "c.pdf",
+          "uri"
         )
-      ).to.be.revertedWith("Vous n'etes pas l'enseignant de ce devoir");
+      ).to.be.revertedWith("Pas l'enseignant de ce devoir");
     });
 
-    it("Ne devrait pas permettre à un non-enseignant de corriger", async function () {
+    it("Revert si non-enseignant corrige", async function () {
       await expect(
         systeme.connect(etudiant1).corrigerSoumission(
           soumissionId,
-          85,
-          "Commentaire"
+          10,
+          "X",
+          "H",
+          "c.pdf",
+          "uri"
         )
       ).to.be.revertedWith("Seul un enseignant peut executer cette action");
     });
   });
 
   // =====================================================
-  //   GESTION DES ANNONCES
+  // OBTENIR NOTES ETUDIANT
   // =====================================================
-  describe("Gestion des Annonces", function () {
+  describe("obtenirNotesEtudiant()", function () {
     beforeEach(async function () {
-      await systeme.inscrireEnseignant(
-        enseignant1.address,
-        "Prof. Ahmed",
-        "PUBLIC_KEY_123"
-      );
+      await setupProfEtudiants();
+      await setupModule1WithProf1(); // module 1
+      await setupModule2WithProf2(); // module 2
 
-      await systeme.inscrireEtudiant(
-        etudiant1.address,
-        "Ahmed Benali",
-        "BDIA2025001"
-      );
+      // etudiant1 dans les 2 modules
+      await systeme.affecterEtudiantAuModule(1, etudiant1.address);
+      await systeme.affecterEtudiantAuModule(2, etudiant1.address);
+
+      await createDevoir(1, enseignant1, "D1");
+      await createDevoir(2, enseignant2, "D2");
+
+      await submit(1, etudiant1, { hash: "H1", nom: "d1.pdf" });
+      await submit(2, etudiant1, { hash: "H2", nom: "d2.pdf" });
+
+      await systeme.connect(enseignant1).corrigerSoumission(1, 14, "ok", "HC1", "c1.pdf", "u1");
+      await systeme.connect(enseignant2).corrigerSoumission(2, 18, "bien", "HC2", "c2.pdf", "u2");
     });
 
-    it("Devrait permettre à un enseignant de publier une annonce", async function () {
-      await systeme.connect(enseignant1).publierAnnonce(
-        "Annonce importante",
-        "Le cours de demain est annulé",
-        true
-      );
+    it("Retourne (soumissionIds, notes, moduleIds) cohérents", async function () {
+      const res = await systeme.obtenirNotesEtudiant(etudiant1.address);
+      const soumissionIds = res[0];
+      const notes = res[1];
+      const moduleIds = res[2];
 
-      expect(await systeme.compteurAnnonces()).to.equal(1);
+      expect(soumissionIds.length).to.equal(2);
+      expect(notes.length).to.equal(2);
+      expect(moduleIds.length).to.equal(2);
 
-      const annonce = await systeme.annonces(1);
-      expect(annonce.titre).to.equal("Annonce importante");
-      expect(annonce.auteur).to.equal(enseignant1.address);
-      expect(annonce.estPublique).to.be.true;
+      expect(soumissionIds[0]).to.equal(1);
+      expect(notes[0]).to.equal(14);
+      expect(moduleIds[0]).to.equal(1);
+
+      expect(soumissionIds[1]).to.equal(2);
+      expect(notes[1]).to.equal(18);
+      expect(moduleIds[1]).to.equal(2);
     });
 
-    it("Devrait permettre à un étudiant de publier une annonce", async function () {
-      await systeme.connect(etudiant1).publierAnnonce(
-        "Question",
-        "Où trouver les ressources?",
-        true
-      );
-
-      expect(await systeme.compteurAnnonces()).to.equal(1);
-    });
-
-    it("Ne devrait pas permettre à un non-inscrit de publier", async function () {
-      await expect(
-        systeme.connect(nonInscrit).publierAnnonce(
-          "Titre",
-          "Contenu",
-          true
-        )
-      ).to.be.revertedWith("Seuls les membres inscrits peuvent publier");
-    });
-
-    it("Devrait émettre un événement lors de la publication", async function () {
-      await expect(
-        systeme.connect(enseignant1).publierAnnonce(
-          "Annonce",
-          "Contenu",
-          true
-        )
-      ).to.emit(systeme, "AnnoncePubliee")
-        .withArgs(1, enseignant1.address, "Annonce");
+    it("Si étudiant n'a aucune soumission => tableaux vides", async function () {
+      const res2 = await systeme.obtenirNotesEtudiant(etudiant2.address);
+      expect(res2[0].length).to.equal(0);
+      expect(res2[1].length).to.equal(0);
+      expect(res2[2].length).to.equal(0);
     });
   });
 
   // =====================================================
-  //   INTEGRATION COMPLETE
+  // ANNONCES
   // =====================================================
-  describe("Intégration Complète", function () {
-    it("Devrait gérer un flux complet d'utilisation", async function () {
-      // 1. Admin inscrit un enseignant et un étudiant
-      await systeme.inscrireEnseignant(
-        enseignant1.address,
-        "Prof. Ahmed",
-        "PUBLIC_KEY_123"
-      );
+  describe("Annonces", function () {
+    beforeEach(async function () {
+      await systeme.inscrireEnseignant(enseignant1.address, "Prof. Ahmed");
+      await systeme.inscrireEtudiant(etudiant1.address, "Ahmed", "BDIA2025001");
+    });
 
-      await systeme.inscrireEtudiant(
-        etudiant1.address,
-        "Ahmed Benali",
-        "BDIA2025001"
-      );
+    it("Prof publie annonce OK + event", async function () {
+      await expect(
+        systeme.connect(enseignant1).publierAnnonce("Annonce", "Contenu", true)
+      )
+        .to.emit(systeme, "AnnoncePubliee")
+        .withArgs(1, enseignant1.address, "Annonce");
 
-      // 2. Enseignant crée un devoir avec le temps on-chain
+      expect(await systeme.compteurAnnonces()).to.equal(1);
+      const a = await systeme.annonces(1);
+      expect(a.id).to.equal(1);
+      expect(a.auteur).to.equal(enseignant1.address);
+      expect(a.titre).to.equal("Annonce");
+      expect(a.contenu).to.equal("Contenu");
+      expect(a.estPublique).to.equal(true);
+      expect(a.dateCreation).to.be.gt(0);
+    });
+
+    it("Etudiant publie annonce OK", async function () {
+      await systeme.connect(etudiant1).publierAnnonce("Q", "???", false);
+      expect(await systeme.compteurAnnonces()).to.equal(1);
+      const a = await systeme.annonces(1);
+      expect(a.estPublique).to.equal(false);
+    });
+
+    it("Non-inscrit ne peut pas publier", async function () {
+      await expect(
+        systeme.connect(nonInscrit).publierAnnonce("T", "C", true)
+      ).to.be.revertedWith("Seuls les membres inscrits peuvent publier");
+    });
+  });
+
+  // =====================================================
+  // INTEGRATION COMPLETE
+  // =====================================================
+  describe("Intégration complète (happy path)", function () {
+    it("Flux complet : inscriptions -> module -> affectation -> devoir -> soumission -> correction", async function () {
+      await systeme.inscrireEnseignant(enseignant1.address, "Prof. Ahmed");
+      await systeme.inscrireEtudiant(etudiant1.address, "Ahmed", "BDIA2025001");
+
+      await systeme.creerModule("Blockchain", 2, enseignant1.address);
+      await systeme.affecterEtudiantAuModule(1, etudiant1.address);
+
       const now = await time.latest();
       const dateLimite = Number(now) + 86400;
 
       await systeme.connect(enseignant1).creerDevoir(
+        1,
         "Contrôle Final",
-        "Questions sur blockchain",
-        "PUBLIC_KEY_DEVOIR",
+        "Questions",
+        "PUBKEY",
         dateLimite
       );
 
-      // 3. Étudiant soumet le devoir
       await systeme.connect(etudiant1).soumettreDevoir(
         1,
-        "REPONSES_CHIFFREES",
-        "IDENTITE_CHIFFREE"
+        "REP",
+        "ID",
+        "HASH_SUB",
+        "rep.pdf",
+        "application/pdf",
+        "uri-sub",
+        "AES"
       );
 
-      // 4. Enseignant corrige
       await systeme.connect(enseignant1).corrigerSoumission(
         1,
-        90,
-        "Très bon travail!"
+        17,
+        "Très bien",
+        "HASH_CORR",
+        "corr.pdf",
+        "uri-corr"
       );
 
-      // 5. Vérifications finales
-      const soumission = await systeme.obtenirSoumission(1);
-      expect(soumission.estCorrige).to.be.true;
-      expect(soumission.note).to.equal(90);
+      const s = await systeme.obtenirSoumission(1);
+      expect(s.estCorrige).to.equal(true);
+      expect(s.note).to.equal(17);
+      expect(s.fichierCorrection.nom).to.equal("corr.pdf");
 
-      const compteurs = {
-        devoirs: await systeme.compteurDevoirs(),
-        soumissions: await systeme.compteurSoumissions()
-      };
-
-      expect(compteurs.devoirs).to.equal(1);
-      expect(compteurs.soumissions).to.equal(1);
+      expect(await systeme.compteurModules()).to.equal(1);
+      expect(await systeme.compteurDevoirs()).to.equal(1);
+      expect(await systeme.compteurSoumissions()).to.equal(1);
     });
   });
 });
