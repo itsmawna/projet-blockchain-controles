@@ -2,13 +2,7 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
-/**
- * ✅ TESTS ADAPTÉS AU NOUVEAU CONTRAT
- * - ❌ suppression totale des tests de definirClePubliqueEtudiant + clePublique étudiant (car elle n'existe plus)
- * - ✅ le reste reste identique : modules, affectations, devoirs, soumissions, corrections, annonces
- */
-
-describe("SystemeGestionControles (MAX TESTS) - NEW CONTRACT", function () {
+describe("SystemeGestionControles", function () {
   let systeme;
   let admin, enseignant1, enseignant2, etudiant1, etudiant2, nonInscrit;
 
@@ -137,7 +131,7 @@ describe("SystemeGestionControles (MAX TESTS) - NEW CONTRACT", function () {
       const etu = await systeme.etudiants(etudiant1.address);
       expect(etu.nom).to.equal("Ahmed");
       expect(etu.numeroEtudiant).to.equal("BDIA2025001");
-      // ✅ plus de etu.clePublique dans le nouveau contrat
+      
       expect(etu.estActif).to.equal(true);
       expect(etu.dateInscription).to.be.gt(0);
     });

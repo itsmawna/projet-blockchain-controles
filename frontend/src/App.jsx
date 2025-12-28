@@ -1020,16 +1020,17 @@ export default function App() {
 
       const corrFile = correctionFileRef.current?.files?.[0];
       if (corrFile) {
-        const aesKey = CryptoUtils.generateAESKey();
-        const fileData = await CryptoUtils.encryptFileContentToString(corrFile, aesKey);
+        // 1) Hash du fichier clair (intégrité)
+        corrHash = await sha256FileHex(corrFile);
 
-        corrHash = await sha256Hex(fileData.encryptedContent);
-        corrNom = fileData.name;
+        // 2) Nom (et extension réelle)
+        corrNom = corrFile.name;
 
-        const encBlob = stringToBlob(fileData.encryptedContent);
-        const up = await uploadFileToServer(encBlob, `corr_enc_${Date.now()}_${fileData.name}.bin`);
+        // 3) Upload du fichier clair
+        const up = await uploadFileToServer(corrFile, corrFile.name);
         corrURI = up.uri;
       }
+
 
       // ✅ FIX: la correction est liée à la SOUMISSION (donc à l’étudiant spécifique automatiquement)
       const tx = await contract.corrigerSoumission(
@@ -1189,7 +1190,7 @@ export default function App() {
           <div className="header-content">
             <div>
               <h1 className="title">📚 Système de Gestion des Contrôles</h1>
-              <p className="subtitle">Blockchain + RSA/AES + Upload + Anti-Plagiat</p>
+              <p className="subtitle">Évaluation académique décentralisée et sécurisée</p>
             </div>
 
             {!account ? (
@@ -1298,17 +1299,18 @@ export default function App() {
                   <h3 className="section-subtitle">ℹ️ Infos</h3>
                   <ul className="info-list">
                     <li>
-                      <span className="check-icon">✓</span> Les devoirs utilisent la clé publique du PROF (Profil).
+                      <span className="check-icon">✓</span> Chaque devoir est automatiquement sécurisé via la clé publique de l’enseignant.
                     </li>
                     <li>
-                      <span className="check-icon">✓</span> L’étudiant chiffre uniquement avec la clé publique du prof (pas de clés étudiant).
+                      <span className="check-icon">✓</span> Les étudiants soumettent en toute sécurité, sans gestion manuelle de clés.
                     </li>
                     <li>
-                      <span className="check-icon">✓</span> L’adresse Ethereum de l’étudiant (msg.sender) identifie chaque soumission.
+                      <span className="check-icon">✓</span> Chaque soumission est liée de façon unique au wallet Ethereum de l’étudiant.
                     </li>
                     <li>
-                      <span className="check-icon">✓</span> Correction liée à la soumission → donc à l’étudiant spécifique.
+                      <span className="check-icon">✓</span> Les corrections sont associées directement à la soumission correspondante.
                     </li>
+
                   </ul>
                 </div>
               </div>
@@ -1436,7 +1438,7 @@ export default function App() {
                       </button>
 
                       <div className="warning-box">
-                        ✅ Le prof définira sa clé publique dans <b>Profil</b>.
+                        Configuration de sécurité depuis le profil enseignant.
                       </div>
                     </div>
                   </div>
@@ -1467,7 +1469,7 @@ export default function App() {
                       </button>
 
                       <div className="warning-box">
-                        ✅ Étudiant : pas de clés RSA à gérer dans cette version (chiffrement uniquement avec la clé publique du prof).
+                        Les soumissions sont automatiquement sécurisées, sans action supplémentaire.
                       </div>
                     </div>
                   </div>
@@ -1499,7 +1501,7 @@ export default function App() {
                     />
 
                     <button className="btn-primary" onClick={affecterEtudiant}>
-                      ✅ Affecter
+                      Affecter
                     </button>
                   </div>
                 </div>
@@ -1588,15 +1590,14 @@ export default function App() {
                   />
 
                   <button className="btn-primary btn-large" onClick={creerDevoir}>
-                    🔐 Créer (utilise clé publique PROF)
+                    🔐 Créer 
                   </button>
 
                   <div className="info-box">
-                    ✅ Les étudiants chiffrent avec ta clé publique (Profil).
+              
+                     Le déchiffrement s’effectue automatiquement depuis ton espace.
                     <br />
-                    🔐 Tu déchiffres avec ta clé privée (Profil).
-                    <br />
-                    ❌ Pas de clés RSA côté étudiant dans cette version.
+                    Les soumissions utilisent les paramètres de sécurité définis dans ton profil.
                   </div>
                 </div>
               </div>
@@ -1768,13 +1769,11 @@ export default function App() {
                     <div>
                       <label className="form-label">📎 Fichier de correction (optionnel)</label>
                       <input ref={correctionFileRef} type="file" className="file-input" />
-                      <div style={{ opacity: 0.8, marginTop: 6 }}>
-                        (Actuellement: upload + chiffrement AES, mais la clé AES n’est pas envoyée à l’étudiant)
-                      </div>
+                      
                     </div>
 
                     <button className="btn-primary btn-small" onClick={corrigerSoumission}>
-                      ✅ Valider correction
+                     Valider correction
                     </button>
                   </div>
                 </div>
@@ -1791,7 +1790,7 @@ export default function App() {
                 </button>
 
                 <div className="form-group" style={{ marginTop: 12 }}>
-                  <label className="form-label">🔑 Clé privée RSA (prof)</label>
+                  <label className="form-label">Clé privée RSA (prof)</label>
                   <input
                     className="input-glass input-private-key"
                     type="password"
@@ -1956,15 +1955,15 @@ export default function App() {
                   />
 
                   <button className="btn-success btn-large" onClick={soumettreDevoir} disabled={!eligibleDevoirs.length}>
-                    🔒 Soumettre (RSA + AES + Upload)
+                    🔒 Soumettre 
                   </button>
 
                   <div className="info-box">
-                    ✅ Le texte est chiffré RSA avec la clé publique du prof (stockée dans le devoir).
+                    Les réponses sont protégées par la plateforme.
                     <br />
-                    📎 Le fichier est chiffré AES puis uploadé, et la clé AES est chiffrée RSA.
+                    Les fichiers sont joints de façon sécurisée.
                     <br />
-                    ✅ L’adresse Ethereum de l’étudiant (wallet) identifie la soumission.
+                    L’adresse Ethereum de l’étudiant (wallet) identifie la soumission.
                   </div>
                 </div>
               </div>
@@ -2085,11 +2084,11 @@ export default function App() {
                     <h3 className="section-subtitle">🔑 Mes clés RSA (PROF)</h3>
 
                     <div className="info-box">
-                      🔓 Clé publique sur-chain
+                      - Clé publique sur-chain
                       <br />
-                      🔐 Clé privée locale (navigateur)
+                      - Clé privée locale (navigateur)
                       <br />
-                      ✅ Modules visibles: uniquement tes modules
+                      - Modules visibles: uniquement tes modules
                     </div>
 
                     {/* ✅ FIX 1 : afficher uniquement les modules du prof dans profil */}
@@ -2194,10 +2193,9 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="warning-box" style={{ marginTop: 14 }}>
-                    ℹ️ Dans cette version, la gestion des clés RSA
-                         est <b>uniquement pour l’enseignant</b>.
+                    Soumission simple et sécurisée, sans configuration.
                     <br />
-                    ✅ L’étudiant n’a pas besoin de clé privée/publique pour soumettre.
+                    Sécurité intégrée au processus d’évaluation.
                   </div>
                 )}
               </div>
