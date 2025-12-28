@@ -3,7 +3,7 @@
 > Projet Final - Module Fondamentaux de la Blockchain (M356)  
 > ENSA Tétouan - Département IA & Digitalisation
 
-<div align=center>
+<div align="center">
 ![Blockchain](https://img.shields.io/badge/Blockchain-Ethereum-blue)
 ![Solidity](https://img.shields.io/badge/Solidity-0.8.19-green)
 ![Hardhat](https://img.shields.io/badge/Hardhat-Local%20Node%2031337-yellow)
