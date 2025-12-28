@@ -1,36 +1,27 @@
-node_modules
-.env
-
-# Hardhat files
-/cache
-/artifacts
-
-# TypeChain files
-/typechain
-/typechain-types
-
-# solidity-coverage files
-/coverage
-/coverage.json
-
-# Hardhat Ignition default folder for deployments against a local node
-ignition/deployments/chain-31337
-
 # =========================
 # Dependencies
 # =========================
 node_modules/
 
 # =========================
+# Environment variables
+# =========================
+.env
+
+# =========================
 # Hardhat
 # =========================
 artifacts/
 cache/
+coverage/
+coverage.json
+ignition/deployments/chain-31337/
 
 # =========================
-# Environment variables
+# TypeChain
 # =========================
-.env
+typechain/
+typechain-types/
 
 # =========================
 # Frontend build
@@ -39,9 +30,14 @@ frontend/build/
 frontend/dist/
 
 # =========================
-# Uploads
+# Uploads / Files
 # =========================
 upload-server/uploads/
+
+# =========================
+# Network-specific files
+# =========================
+contract-address.json
 
 # =========================
 # Logs
@@ -58,8 +54,3 @@ yarn-error.log*
 Thumbs.db
 .vscode/
 .idea/
-
-# =========================
-# Network-specific files
-# =========================
-contract-address.json
