@@ -937,3 +937,117 @@ Causes possibles :
 <div align="center">
 Ce projet est réalisé dans le cadre du module M356 - Fondamentaux de la Blockchain.
 </div>
+
+
+
+
+
+```mermaid
+flowchart TB
+  %% =============================
+  %% Architecture Générale — projet-blockchain-controles
+  %% =============================
+
+  %% --- Utilisateurs ---
+  subgraph U[Acteurs (MetaMask)]
+    A[Admin\n(wallet deployer)]
+    P[Enseignant\n(wallet prof)]
+    E[Étudiant\n(wallet étudiant)]
+  end
+
+  %% --- Frontend ---
+  subgraph F[Frontend (React)]
+    UI[App React\nPages: Admin / Enseignant / Étudiant]
+    ETH[Ethers.js\nProvider + Signer]
+    CRYPTO[Crypto utils\nWebCrypto RSA-OAEP 2048 + AES]
+    NOTIF[Notifications UI (local)\nex: devoir publié / correction dispo]
+  end
+
+  %% --- Smart contract / Hardhat ---
+  subgraph H[Smart Contract + Dev Tools]
+    SC[SystemeGestionControles.sol\nRôles • Modules • Devoirs\nSoumissions • Corrections • Annonces]
+    HH[Hardhat\ncompile • node • test]
+    DEP[scripts/deploy.js\n+ contract-address.json]
+    MNG[scripts/manage-users.js\n(inscriptions + affectations)]
+    TST[test/*.test.js\n(58 tests passing)]
+  end
+
+  %% --- Blockchain ---
+  subgraph B[Blockchain Ethereum (Local)]
+    CHAIN[Hardhat Node\nChainId 31337]
+    ONCHAIN[(Storage On-chain)\n- modules, devoirs\n- soumissions (chiffrées)\n- notes + correction URI]
+  end
+
+  %% --- Off-chain server ---
+  subgraph S[Off-chain Upload Server]
+    API[Express + Multer\nPOST /upload]
+    FILES[(Stockage fichiers chiffrés)\nGET /files/<name>]
+  end
+
+  %% --- Données clés (pour détails) ---
+  subgraph D[Données & Sécurité (résumé)]
+    RSA[RSA-OAEP\nChiffre: texte + clé AES]
+    AES[AES\nChiffre: fichiers volumineux]
+    HASH[SHA-256\nIntégrité (hash fichiers)]
+    ID[msg.sender\nIdentité étudiant (adresse)]
+  end
+
+  %% =============================
+  %% Connexions principales
+  %% =============================
+  A -->|MetaMask| UI
+  P -->|MetaMask| UI
+  E -->|MetaMask| UI
+
+  UI --> ETH
+  UI --> CRYPTO
+  UI --> NOTIF
+
+  ETH -->|calls/tx| SC
+  SC --> ONCHAIN
+  ONCHAIN --- CHAIN
+
+  HH --> SC
+  DEP --> SC
+  DEP -->|écrit| ADDR[contract-address.json\n(adresse déployée)]
+  ADDR --> UI
+
+  MNG -->|tx admin| SC
+  TST --> SC
+
+  %% =============================
+  %% Flux Étudiant -> Soumission
+  %% =============================
+  E -. "1) prépare réponse" .-> CRYPTO
+  CRYPTO --> RSA
+  CRYPTO --> AES
+  CRYPTO --> HASH
+
+  E -->|2) fichier chiffré AES| API
+  API -->|stocke| FILES
+  API -->|retourne uri| UI
+
+  UI -->|3) tx soumettreDevoir\n(contenuChiffre, identiteChiffree,\nuri, fichierHash, cleAESChiffree)| SC
+  SC --> ID
+  SC --> ONCHAIN
+
+  %% =============================
+  %% Flux Prof -> Correction
+  %% =============================
+  P -->|4) lit soumissions| SC
+  P -. "5) déchiffre local\nclé privée jamais on-chain" .-> CRYPTO
+
+  P -->|6) (option) upload correction| API
+  API -->|retourne uri correction| UI
+
+  UI -->|7) tx corrigerSoumission\n(note, commentaire, correctionURI)| SC
+  SC --> ONCHAIN
+
+  %% =============================
+  %% Lecture Étudiant -> Note/Correction
+  %% =============================
+  E -->|8) consulter notes| SC
+  E -->|9) télécharger correction (si dispo)| FILES
+
+
+```
