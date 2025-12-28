@@ -4,16 +4,16 @@
 > ENSA Tétouan - Département IA & Digitalisation
 
 <p align="center">
-  <img alt="Blockchain" src="https://img.shields.io/badge/Blockchain-Ethereum-blue" />
-  <img alt="Solidity" src="https://img.shields.io/badge/Solidity-0.8.19-green" />
-  <img alt="Hardhat" src="https://img.shields.io/badge/Hardhat-Local%20Node%2031337-yellow" />
-  <img alt="Ethers" src="https://img.shields.io/badge/Ethers.js-v6-purple" />
-  <img alt="React" src="https://img.shields.io/badge/React-18-blue" />
-  <img alt="Node" src="https://img.shields.io/badge/Node.js-%3E%3D16-brightgreen" />
-  <img alt="Express" src="https://img.shields.io/badge/Express.js-Backend-lightgrey" />
-  <img alt="MetaMask" src="https://img.shields.io/badge/Wallet-MetaMask-f6851b" />
-  <img alt="Crypto" src="https://img.shields.io/badge/Crypto-RSA--OAEP%202048%20%2B%20AES-red" />
-  <img alt="Tests" src="https://img.shields.io/badge/Tests-Hardhat%20Passing-success" />
+  <img src="https://img.shields.io/badge/Blockchain-Ethereum-blue?logo=ethereum&logoColor=white" />
+  <img src="https://img.shields.io/badge/Solidity-0.8.19-green?logo=solidity&logoColor=white" />
+  <img src="https://img.shields.io/badge/Hardhat-Local%20Node%2031337-yellow?logo=hardhat&logoColor=black" />
+  <img src="https://img.shields.io/badge/Ethers.js-v6-purple?logo=ethereum&logoColor=white" />
+  <img src="https://img.shields.io/badge/React-18-blue?logo=react&logoColor=white" />
+  <img src="https://img.shields.io/badge/Node.js-%3E%3D16-brightgreen?logo=node.js&logoColor=white" />
+  <img src="https://img.shields.io/badge/Express.js-Backend-lightgrey?logo=express&logoColor=black" />
+  <img src="https://img.shields.io/badge/Wallet-MetaMask-f6851b?logo=metamask&logoColor=white" />
+  <img src="https://img.shields.io/badge/Crypto-RSA--OAEP%202048%20%2B%20AES-red?logo=letsencrypt&logoColor=white" />
+  <img src="https://img.shields.io/badge/Tests-Hardhat%20Passing-success?logo=mocha&logoColor=white" />
 </p>
 
 
