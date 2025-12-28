@@ -1,14 +1,21 @@
-# 📚 Système de Gestion des Contrôles - Blockchain (ENSA Tétouan)
+# Système de Gestion des Contrôles - Blockchain (ENSA Tétouan)
 
 > Projet Final - Module Fondamentaux de la Blockchain (M356)  
 > ENSA Tétouan - Département IA & Digitalisation
 
 ![Blockchain](https://img.shields.io/badge/Blockchain-Ethereum-blue)
 ![Solidity](https://img.shields.io/badge/Solidity-0.8.19-green)
+![Hardhat](https://img.shields.io/badge/Hardhat-Local%20Node%2031337-yellow)
+![Ethers](https://img.shields.io/badge/Ethers.js-v6-purple)
 ![React](https://img.shields.io/badge/React-18-blue)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+![Node](https://img.shields.io/badge/Node.js-%3E%3D16-brightgreen)
+![Express](https://img.shields.io/badge/Express.js-Backend-lightgrey)
+![MetaMask](https://img.shields.io/badge/Wallet-MetaMask-f6851b)
+![Crypto](https://img.shields.io/badge/Crypto-RSA--OAEP%202048%20%2B%20AES-red)
+![Tests](https://img.shields.io/badge/Tests-Hardhat%20Passing-success)
 
-## 🎯 À Propos
+
+
 
 Plateforme décentralisée de gestion des contrôles/devoirs basée sur **Ethereum**, avec :
 - gestion des **rôles** (Admin / Enseignant / Étudiant),
@@ -21,26 +28,26 @@ L’objectif est de garantir **traçabilité**, **intégrité**, **équité** et
 
 ---
 
-## ✨ Fonctionnalités clés
+## Fonctionnalités clés
 
-### ✅ Gestion académique
+### Gestion académique
 - **Admin** : inscrit enseignants/étudiants + affecte les étudiants aux modules
 - **Enseignant** : crée des devoirs dans ses modules + corrige ses soumissions
 - **Étudiant** : voit uniquement les devoirs de ses modules + soumet avant la date limite
 
-### 🔐 Chiffrement & Fichiers
+### Chiffrement & Fichiers
 - **Texte (réponse + identité)** : chiffré en **RSA (RSA-OAEP 2048)** avec la clé publique du prof
-- **Fichier (optionnel)** : chiffré en **AES**, puis uploadé sur serveur off-chain
+- **Fichier** : chiffré en **AES**, puis uploadé sur serveur off-chain
 - La **clé AES** est ensuite chiffrée en RSA avec la clé publique du prof
 - Le prof **déchiffre** avec sa **clé privée locale** (jamais stockée on-chain)
 
-### 🧾 Correction
+### Correction
 - Correction liée à une **soumission précise** (donc automatiquement liée à l’étudiant qui a soumis)
 - Possibilité d’ajouter un **fichier de correction** (upload)
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -77,7 +84,7 @@ flowchart LR
   UP --> FS[(Fichiers chiffrés)]
 ```
 
-## 🚀 Installation Rapide
+## Installation Rapide
 
 ### Prérequis
 
@@ -89,8 +96,8 @@ flowchart LR
 ### Étape 1 : Cloner le projet
 
 ```bash
-git clone <url-du-repo>
-cd systeme-gestion-controles-blockchain
+git clone https://github.com/itsmawna/projet-blockchain-controles
+cd projet-blockchain-controles
 ```
 
 ### Étape 2 : Installer les dépendances
@@ -98,7 +105,8 @@ cd systeme-gestion-controles-blockchain
 ```bash
 # Backend
 npm install
-
+```
+```bash
 # Frontend
 cd frontend
 npm install
@@ -143,12 +151,11 @@ npm init -y
 npm i express cors multer
 node server.js
 ```
-Serveur : http://localhost:5001
+- Serveur : http://localhost:5001
+- Upload : POST http://localhost:5001/upload
+- Download : http://localhost:5001/files/<filename>
 
-Upload : POST http://localhost:5001/upload
-
-Download : http://localhost:5001/files/<filename>
-### Étape 8 : Lancer l'interface
+### Étape 9 : Lancer l'interface
 
 ```bash
 cd frontend
@@ -157,7 +164,7 @@ npm run dev
 
 Accéder à `http://localhost:3000` 
 
-## 📖 Guide d'Utilisation
+## Guide d'Utilisation
 
 ### Pour l'Administrateur (deployeur)
 
@@ -193,21 +200,21 @@ Chaque soumission est liée à l’étudiant via msg.sender dans le smart contra
 
 4. Consulter ses notes & télécharger la correction si disponible
 
-## 🔒 Sécurité
+## Sécurité
 
 ### RSA (texte)
 
--L’enseignant publie sa clé publique (profil) sur la blockchain.
--Lors de la création du devoir, le devoir stocke la clé publique de chiffrement.
--L’étudiant chiffre identité + réponse avec la clé publique du devoir.
+- L’enseignant publie sa clé publique (profil) sur la blockchain.
+- Lors de la création du devoir, le devoir stocke la clé publique de chiffrement.
+- L’étudiant chiffre identité + réponse avec la clé publique du devoir.
 
 ### AES (fichier)
 
--L’étudiant génère une clé AES aléatoire
--chiffre le fichier avec AES
--upload le contenu chiffré au serveur
--chiffre la clé AES avec la clé publique RSA du prof
--stocke (hash/nom/type/uri/cleAESChiffree) dans la blockchain
+- L’étudiant génère une clé AES aléatoire
+- Chiffre le fichier avec AES
+- Upload le contenu chiffré au serveur
+- Chiffre la clé AES avec la clé publique RSA du prof
+- Stocke (hash/nom/type/uri/cleAESChiffree) dans la blockchain
 
 **La clé privée n’est jamais stockée on-chain.**
 ## Sécurité et chiffrement (RSA + AES) : details
@@ -223,7 +230,7 @@ Ce projet utilise un **chiffrement hybride** combinant **RSA** et **AES**, comme
 
 ## 1. Algorithmes utilisés
 
-### 🔑 RSA (asymétrique)
+### RSA (asymétrique)
 - Paire de clés : **clé publique / clé privée**
 - Utilisé pour :
   - Chiffrer le texte (`contenuChiffre`, `identiteChiffree`)
@@ -238,7 +245,7 @@ Dans le code :
 
 ---
 
-### 🗝️ AES (symétrique)
+### AES (symétrique)
 - Une **seule clé secrète**
 - Utilisé pour :
   - Chiffrer les **fichiers volumineux** (PDF, DOC, ZIP…)
@@ -251,7 +258,7 @@ Dans le code :
 
 ---
 
-### 🔍 SHA-256 (hash)
+### SHA-256 (hash)
 - **Ne chiffre pas**
 - Sert à vérifier l’intégrité du contenu
 - Si le fichier change → le hash change
@@ -420,11 +427,11 @@ Chaque soumission inclut :
 
 → Même avec les mêmes réponses, les textes chiffrés sont différents
 
-## ✅ Tests (Hardhat) — Résultats d’exécution
+## Tests (Hardhat) — Résultats d’exécution
 
 Les tests unitaires et d’intégration du smart contract **SystemeGestionControles** ont été exécutés avec succès via Hardhat.
 
-### 🧪 Commande utilisée
+### Commande utilisée
 
 ```powershell
 npx hardhat test test/SystemeGestionControles.test.js
@@ -521,7 +528,7 @@ Extraits (moyenne)
 Tous les tests ont été validés avec succès et le rapport gas est disponible dans la sortie Hardhat.
 
 
-## 📁 Structure du Projet
+## Structure du Projet
 
 ```
 systeme-gestion-controles-blockchain/
@@ -638,7 +645,7 @@ Private Key: 0x...
 ```
 Dans MetaMask :
 
-**Import Account* : 
+**Import Account** : 
 
 coller la Private Key du compte choisi
 <p align="center">
@@ -647,7 +654,7 @@ coller la Private Key du compte choisi
 
 Ce compte devient un utilisateur du système :
 
-- Account #0 : souvent utilisé comme Admin (deployer)
+- Account #0 : utilisé comme Admin (deployer)
 - autres comptes : enseignants / étudiants
 
 
@@ -675,11 +682,9 @@ Dans Solidity, msg.sender représente l’adresse Ethereum du wallet connecté.
 
 Dans ce projet :
 
-l’adresse admin = deployer
-
-l’enseignant et l’étudiant sont identifiés par leur wallet
-
-une soumission est automatiquement liée à l’étudiant qui l’a envoyée (adresse on-chain)
+- l’adresse admin = deployer
+- l’enseignant et l’étudiant sont identifiés par leur wallet
+- une soumission est automatiquement liée à l’étudiant qui l’a envoyée (adresse on-chain)
 
 **Donc pas besoin de login/password** :
 MetaMask = authentification + signature.
@@ -763,9 +768,7 @@ flowchart TD
   P1 --> Q([Fin - projet prêt + démo])
 ```
 
-## 📊 Fonctionnalités du Smart Contract
-
-## 🧩 Fonctions Smart Contract (résumé)
+## Fonctions Smart Contract (résumé)
 
 | Fonction                         | Description                                   | Rôle            |
 |----------------------------------|-----------------------------------------------|-----------------|
@@ -780,6 +783,7 @@ flowchart TD
 | `obtenirDevoir()`                | Lire un devoir                                | Tous            |
 | `obtenirSoumission()`            | Lire une soumission                           | Tous (lecture)  |
 
+## Diagramme de sequence
 ``` mermaid
 sequenceDiagram
   autonumber
@@ -871,7 +875,7 @@ sequenceDiagram
   end
 
 ```
-## 🎓 Objectifs Pédagogiques Atteints
+## Objectifs Pédagogiques Atteints
 
 - [x] Automatisation des tâches de gestion
 - [x] Signature numérique des transactions
@@ -880,7 +884,7 @@ sequenceDiagram
 - [x] Immuabilité des données
 - [x] Sécurité renforcée
 
-## 🔧 Technologies Utilisées
+## Technologies Utilisées
 
 ### Backend
 - **Solidity 0.8.19** : Langage de smart contracts
@@ -895,7 +899,7 @@ sequenceDiagram
 - **MetaMask** : Wallet Ethereum
 
 
-## 🐛 Dépannage (problèmes fréquents)
+## Dépannage (problèmes fréquents)
 
 ### MetaMask / réseau local
 Ajouter le réseau **Hardhat** :
@@ -904,7 +908,7 @@ Ajouter le réseau **Hardhat** :
 
 ---
 
-### ❌ “Contrat non trouvé”
+### “Contrat non trouvé”
 Vérifier :
 - le fichier `contract-address.json`
 - la valeur de `CONTRACT_ADDRESS` dans `App.jsx`
@@ -912,13 +916,13 @@ Vérifier :
 
 ---
 
-### 👨‍🎓 Étudiant ne voit aucun devoir
+### Étudiant ne voit aucun devoir
 - l’admin doit avoir **affecté l’étudiant à un module**
 - le devoir doit appartenir à ce module
 
 ---
 
-### ⛔ Soumission refusée
+### Soumission refusée
 Causes possibles :
 - date limite dépassée
 - étudiant non inscrit au module du devoir
@@ -928,13 +932,6 @@ Causes possibles :
 
 ---
 
-<div align="center">
-
-**Fait avec ❤️ pour l'éducation décentralisée**
-
-[Documentation](./README.md) • [Rapport](./rapport.pdf) • [Présentation](./presentation.pdf)
-
-</div>
 <div align="center">
 Ce projet est réalisé dans le cadre du module M356 - Fondamentaux de la Blockchain.
 </div>
