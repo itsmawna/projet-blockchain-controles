@@ -123,5 +123,5 @@ Résultat attendu :  **tests pass** (smart contract stable).
 - date limite dépassée
 - étudiant non inscrit au module
 - devoir déjà soumis (protection anti double soumission)
-
+---
 <div align="center"> Projet réalisé dans le cadre du module M356 — Fondamentaux de la Blockchain (ENSA Tétouan). </div>
