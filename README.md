@@ -126,3 +126,4 @@ Résultat attendu :  **tests pass** (smart contract stable).
 
 ```
 <div align="center"> Projet réalisé dans le cadre du module M356 — Fondamentaux de la Blockchain (ENSA Tétouan). </div>
+```
