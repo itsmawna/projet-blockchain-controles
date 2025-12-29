@@ -42,15 +42,11 @@
   --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ================================
-   GLOBAL RESET + FULLSCREEN FIX
-   (Évite le "blanc/gris" en bas)
-   ================================ */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  min-width: 0; /* CRITIQUE pour flex/grid */
+  min-width: 0; 
 }
 
 html {
@@ -65,7 +61,6 @@ body {
   width: 100%;
   margin: 0;
 
-  /* NE PAS forcer height:100% => cause souvent du blanc */
   min-height: 100vh;
   min-height: 100dvh;
 
@@ -81,7 +76,7 @@ body {
   position: relative;
 }
 
-/* Overlay lumineux */
+
 body::before {
   content: "";
   position: fixed;
@@ -93,7 +88,6 @@ body::before {
   z-index: 0;
 }
 
-/* App root fullscreen */
 #root,
 .app-container {
   width: 100%;
@@ -103,7 +97,6 @@ body::before {
   z-index: 1;
 }
 
-/* Container fullscreen (pas de max-width) */
 .container {
   max-width: none;
   width: 100%;
@@ -111,9 +104,6 @@ body::before {
   padding: 0 2rem;
 }
 
-/* ============================================
-   HEADER
-   ============================================ */
 .header {
   width: 100%;
   background: rgba(10, 15, 30, 0.8);
@@ -151,10 +141,6 @@ body::before {
   font-weight: 500;
   letter-spacing: 0.02em;
 }
-
-/* ============================================
-   BOUTONS
-   ============================================ */
 .btn-connect,
 .btn-primary,
 .btn-success,
@@ -291,9 +277,6 @@ body::before {
   font-size: 0.875rem;
 }
 
-/* ============================================
-   ACCOUNT INFO
-   ============================================ */
 .account-info {
   display: flex;
   flex-direction: column;
@@ -359,9 +342,6 @@ body::before {
   color: var(--text-secondary);
 }
 
-/* ============================================
-   NAVIGATION
-   ============================================ */
 .nav {
   background: rgba(17, 24, 39, 0.6);
   backdrop-filter: blur(20px) saturate(180%);
@@ -425,9 +405,6 @@ body::before {
   transform: translateX(-50%) scaleX(1);
 }
 
-/* ============================================
-   MAIN CONTENT (FULLSCREEN)
-   ============================================ */
 .main-content {
   padding: 2.5rem 2rem;
   max-width: none;
@@ -435,9 +412,6 @@ body::before {
   margin: 0;
 }
 
-/* ============================================
-   CARDS
-   ============================================ */
 .card {
   background: rgba(17, 24, 39, 0.5);
   backdrop-filter: blur(20px) saturate(180%);
@@ -507,9 +481,6 @@ body::before {
   gap: 0.75rem;
 }
 
-/* ============================================
-   FORMS
-   ============================================ */
 .form-group {
   display: flex;
   flex-direction: column;
@@ -620,10 +591,6 @@ body::before {
   background: rgba(59, 130, 246, 0.05);
   color: var(--accent-blue-light);
 }
-
-/* ============================================
-   INFO & WARNING BOXES
-   ============================================ */
 .info-box {
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0.03) 100%);
   border: 1px solid rgba(59, 130, 246, 0.3);
@@ -669,9 +636,6 @@ body::before {
   flex-shrink: 0;
 }
 
-/* ============================================
-   DASHBOARD
-   ============================================ */
 .dashboard {
   display: flex;
   flex-direction: column;
@@ -764,9 +728,6 @@ body::before {
   letter-spacing: 0.02em;
 }
 
-/* ============================================
-   DEVOIRS LIST
-   ============================================ */
 .devoirs-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -880,9 +841,6 @@ body::before {
   word-break: break-word;
 }
 
-/* ============================================
-   SOUMISSIONS
-   ============================================ */
 .soumissions-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
@@ -980,9 +938,6 @@ body::before {
   max-width: 100%;
 }
 
-/* ============================================
-   GRADES
-   ============================================ */
 .grades-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -1098,9 +1053,6 @@ body::before {
   border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-/* ============================================
-   ADMIN PANEL
-   ============================================ */
 .admin-panel,
 .admin-grid {
   display: grid;
@@ -1136,9 +1088,6 @@ body::before {
   gap: 0.5rem;
 }
 
-/* ============================================
-   MODULES
-   ============================================ */
 .modules-list {
   display: flex;
   flex-direction: column;
@@ -1165,9 +1114,6 @@ body::before {
   transform: translateX(4px);
 }
 
-/* ============================================
-   PROFILE
-   ============================================ */
 .profile-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -1214,9 +1160,6 @@ body::before {
   color: var(--accent-blue-light);
 }
 
-/* ============================================
-   ANTI-PLAGIAT
-   ============================================ */
 .plagiarism-results {
   margin-top: 2rem;
 }
@@ -1286,9 +1229,6 @@ body::before {
   background: rgba(59, 130, 246, 0.5);
 }
 
-/* ============================================
-   WELCOME SCREEN
-   ============================================ */
 .welcome-card {
   text-align: center;
   max-width: none;
@@ -1325,9 +1265,6 @@ body::before {
   line-height: 1.8;
 }
 
-/* ============================================
-   EMPTY STATES
-   ============================================ */
 .empty-state {
   text-align: center;
   padding: 3rem 2rem;
@@ -1336,9 +1273,6 @@ body::before {
   font-style: italic;
 }
 
-/* ============================================
-   FOOTER
-   ============================================ */
 .footer {
   width: 100%;
   background: rgba(10, 15, 30, 0.8);
@@ -1355,9 +1289,7 @@ body::before {
   letter-spacing: 0.02em;
 }
 
-/* ============================================
-   RESPONSIVE
-   ============================================ */
+
 @media (max-width: 1024px) {
   .admin-grid {
     grid-template-columns: 1fr;

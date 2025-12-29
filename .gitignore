@@ -32,7 +32,9 @@ frontend/dist/
 # =========================
 # Uploads / Files
 # =========================
-upload-server/uploads/
+upload-server/uploads/*
+uploads/*
+
 
 # =========================
 # Network-specific files

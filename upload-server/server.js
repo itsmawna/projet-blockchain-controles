@@ -19,14 +19,14 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// ✅ Upload
+// Upload
 app.post("/upload", upload.single("file"), (req, res) => {
   if (!req.file) return res.status(400).send("No file");
   const uri = `http://localhost:5001/files/${req.file.filename}`;
   res.json({ uri });
 });
 
-// ✅ Télécharger
+// Télécharger
 app.use("/files", express.static(UPLOAD_DIR));
 
-app.listen(5001, () => console.log("✅ Upload server: http://localhost:5001"));
+app.listen(5001, () => console.log("Upload server: http://localhost:5001"));

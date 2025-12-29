@@ -6,13 +6,10 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
-    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
-    "deploy:mumbai": "hardhat run scripts/deploy.js --network mumbai",
     "node": "hardhat node",
-    "manage": "hardhat run scripts/manage-users.js --network localhost",
-    "verify:sepolia": "hardhat verify --network sepolia",
-    "clean": "hardhat clean"
+    "clean": "hardhat clean",
+    "deploy": "hardhat run scripts/deploy.js --network localhost",
+    "manage": "hardhat run scripts/manage-users.js --network localhost"
   },
   "keywords": [
     "blockchain",

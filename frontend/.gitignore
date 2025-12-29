@@ -1,5 +1,7 @@
+############################
 # Logs
-logs
+############################
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,19 +9,76 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+############################
+# Node / Frontend
+############################
+node_modules/
+dist/
+dist-ssr/
 *.local
 
-# Editor directories and files
+# Vite
+.vite/
+.vite-temp/
+
+############################
+# Hardhat / Blockchain
+############################
+artifacts/
+cache/
+coverage/
+coverage.json
+typechain/
+typechain-types/
+build-info/
+
+*.dbg.json
+*.json.lock
+
+############################
+# Environment & Secrets
+############################
+.env
+.env.*
+!.env.example
+
+############################
+# RSA keys / sensitive files
+############################
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*private*
+**/*secret*
+**/*mnemonic*
+**/*seed*
+**/*keystore*
+
+############################
+# Uploads / data
+############################
+uploads/
+storage/
+tmp/
+*.db
+*.sqlite
+
+############################
+# Contract address (local / private)
+############################
+contract-address.json
+
+############################
+# Editor / OS files
+############################
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-

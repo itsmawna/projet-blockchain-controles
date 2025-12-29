@@ -4,12 +4,11 @@ import CryptoJS from "crypto-js";
 import "./styles.css";
 
 // ======================= CONFIG =======================
-const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-const FILE_API_URL = "http://localhost:5001";
+const CONTRACT_ADDRESS = "0x1234...abcd"; // À MODIFIER par chaque utilisateur selon son déploiement
+const FILE_API_URL = "http://localhost:5001"; // // En local : laisser http://localhost:5001
+//En production : remplacer par l’URL du serveur
 
 // ======================= ABI =======================
-// ✅ On garde l’ABI complète utile au projet,
-// ❌ mais côté React on SUPPRIME totalement la gestion des clés étudiant (priv/pub).
 const CONTRACT_ABI = [
   "function administrateur() public view returns (address)",
 
@@ -24,7 +23,6 @@ const CONTRACT_ABI = [
   "function estInscritDansModule(uint256 _moduleId, address _etudiant) external view returns (bool)",
 
   "function definirClePubliqueEnseignant(string _clePublique) external",
-  // "function definirClePubliqueEtudiant(string _clePublique) external", // ❌ plus utilisé côté UI
 
   "function creerDevoir(uint256 _moduleId, string _titre, string _description, string _clePubliqueChiffrement, uint256 _dateLimite) external returns (uint256)",
   "function corrigerSoumission(uint256 _soumissionId, uint256 _note, string _commentaire, string _fichierCorrectionHash, string _fichierCorrectionNom, string _fichierCorrectionURI) external",
@@ -44,7 +42,7 @@ const CONTRACT_ABI = [
   "function estEtudiant(address _adresse) external view returns (bool)",
 
   "function enseignants(address) external view returns (address adresse, string nom, string clePublique, bool estActif, uint256 dateInscription, uint256 moduleId)",
-  "function etudiants(address) external view returns (address adresse, string nom, string numeroEtudiant, string clePublique, bool estActif, uint256 dateInscription)",
+  "function etudiants(address) external view returns (address adresse, string nom, string numeroEtudiant, bool estActif, uint256 dateInscription)",
 
   "function obtenirNotesEtudiant(address _etudiant) external view returns (uint256[] soumissionIds, uint256[] notes, uint256[] moduleIds)",
 
@@ -86,7 +84,7 @@ async function downloadFromUri(uri, filename) {
   URL.revokeObjectURL(url);
 }
 
-// ✅ télécharger un blob (ex: fichier déchiffré)
+// télécharger un blob (ex: fichier déchiffré)
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -102,7 +100,7 @@ async function copyToClipboard(text) {
   if (!text) return;
   try {
     await navigator.clipboard.writeText(text);
-    alert("✅ Copié dans le presse-papiers !");
+    alert("Copié dans le presse-papiers !");
   } catch {
     const ta = document.createElement("textarea");
     ta.value = text;
@@ -110,7 +108,7 @@ async function copyToClipboard(text) {
     ta.select();
     document.execCommand("copy");
     ta.remove();
-    alert("✅ Copié (fallback) !");
+    alert("Copié (fallback) !");
   }
 }
 
@@ -119,7 +117,7 @@ async function pasteFromClipboard() {
     const t = await navigator.clipboard.readText();
     return t || "";
   } catch {
-    alert("❌ Permission presse-papiers refusée. Colle manuellement (Ctrl+V).");
+    alert("Permission presse-papiers refusée. Colle manuellement (Ctrl+V).");
     return "";
   }
 }
@@ -250,7 +248,7 @@ class CryptoUtils {
   }
 }
 
-// ✅ TEST: Vérifie que la clé privée correspond à la clé publique stockée dans le DEVOIR
+// TEST: Vérifie que la clé privée correspond à la clé publique stockée dans le DEVOIR
 async function testKeyPairWithDevoirPubKey(privateKeyBase64, devoirPubKeyBase64) {
   const msg = "TEST_" + Date.now();
   const enc = await CryptoUtils.rsaEncrypt(msg, devoirPubKeyBase64);
@@ -358,7 +356,7 @@ export default function App() {
   const [assign, setAssign] = useState({ moduleId: "", studentAddress: "" });
   const [eligibleDevoirs, setEligibleDevoirs] = useState([]);
 
-  // ✅ NEW: modules liés à l’étudiant (pour filtrage devoirs étudiant)
+  // Modules liés à l’étudiant (pour filtrage devoirs étudiant)
   const [studentModuleIds, setStudentModuleIds] = useState([]); // string[]
 
   // Forms (Admin)
@@ -396,7 +394,7 @@ export default function App() {
   const devoirFileRef = useRef(null);
   const [devoirFile, setDevoirFile] = useState(null);
 
-  // ✅ PROF ONLY: keys
+  // PROF ONLY: keys
   const [teacherPublicKeyOnChain, setTeacherPublicKeyOnChain] = useState("");
   const [teacherPrivateKeyLocal, setTeacherPrivateKeyLocal] = useState("");
   const [showMyPriv, setShowMyPriv] = useState(false);
@@ -406,7 +404,7 @@ export default function App() {
   const [decryptId, setDecryptId] = useState("");
   const [decryptedText, setDecryptedText] = useState("");
 
-  // ✅ NOUVEAU: garder le fichier déchiffré en mémoire pour afficher un bouton "Download"
+  // Garder le fichier déchiffré en mémoire pour afficher un bouton "Download"
   const [decryptedFile, setDecryptedFile] = useState(null); // { blob, name, type }
 
   const [plagiarismResults, setPlagiarismResults] = useState([]);
@@ -520,7 +518,7 @@ export default function App() {
     }
   }, [contract]);
 
-  // ✅ NEW: récupérer les moduleIds où l’étudiant est inscrit (pour filtrer page Devoirs)
+  // Récupérer les moduleIds où l’étudiant est inscrit (pour filtrer page Devoirs)
   const loadStudentModuleIds = useCallback(async () => {
     if (!contract || !account || userRole !== "etudiant") {
       setStudentModuleIds([]);
@@ -568,7 +566,7 @@ export default function App() {
     }
   }, [contract, account, userRole, devoirs]);
 
-  // ✅ FIX PROF: charger uniquement les soumissions des devoirs DU PROF (via devoir.enseignant)
+  // Charger uniquement les soumissions des devoirs DU PROF (via devoir.enseignant)
   const loadTeacherSubmissions = useCallback(async () => {
     if (!contract || !account || userRole !== "enseignant") return;
     try {
@@ -580,7 +578,7 @@ export default function App() {
         for (const sid of ids) {
           const s = await contract.obtenirSoumission(sid);
 
-          // ✅ FIX IDENTITY: l’étudiant est identifié par s.etudiant (msg.sender)
+          // IDENTITY: l’étudiant est identifié par s.etudiant (msg.sender)
           all.push({
             id: s.id.toString(),
             devoirId: s.devoirId.toString(),
@@ -666,7 +664,7 @@ export default function App() {
     }
   }, [contract, account, userRole]);
 
-  // ✅ PROF ONLY
+  // PROF ONLY
   const loadTeacherPublicKeyFromChain = useCallback(async () => {
     if (!contract || !account || userRole !== "enseignant") {
       setTeacherPublicKeyOnChain("");
@@ -721,7 +719,7 @@ export default function App() {
       const tx2 = await contract.creerModule(moduleNom, Number(coefficient), address);
       await tx2.wait();
 
-      alert("✅ Enseignant inscrit + module créé !");
+      alert("Enseignant inscrit + module créé !");
       setNewTeacher({ address: "", nom: "", moduleNom: "", coefficient: "" });
       await loadModules();
     } catch (e) {
@@ -737,7 +735,7 @@ export default function App() {
     try {
       const tx = await contract.inscrireEtudiant(address, nom, numero);
       await tx.wait();
-      alert("✅ Étudiant inscrit !");
+      alert("Étudiant inscrit !");
       setNewStudent({ address: "", nom: "", numero: "" });
     } catch (e) {
       console.error(e);
@@ -751,7 +749,7 @@ export default function App() {
     try {
       const tx = await contract.affecterEtudiantAuModule(Number(assign.moduleId), assign.studentAddress);
       await tx.wait();
-      alert("✅ Étudiant affecté au module !");
+      alert("Étudiant affecté au module !");
       setAssign({ moduleId: "", studentAddress: "" });
       // refresh
       await loadStudentModuleIds();
@@ -792,7 +790,7 @@ export default function App() {
       await loadTeacherPublicKeyFromChain();
 
       alert(
-        "✅ Clés PROF générées !\n\n🔐 Clé privée stockée localement.\n🔓 Clé publique enregistrée sur la blockchain.\n\n⚠️ Utilise cette clé privée pour déchiffrer les soumissions."
+        "Clés PROF générées !\n\n Clé privée stockée localement.\n Clé publique enregistrée sur la blockchain.\n\n Utilise cette clé privée pour déchiffrer les soumissions."
       );
     } catch (e) {
       console.error(e);
@@ -803,7 +801,7 @@ export default function App() {
   const pushPublicKeyOnly = async () => {
     const pk = (teacherPublicKeyOnChain || "").trim();
     if (!pk) return alert("Clé publique vide. Génère des clés d'abord.");
-    alert("✅ Ta clé publique prof est bien disponible on-chain.");
+    alert("Ta clé publique prof est bien disponible on-chain.");
   };
 
   // ======================= ENSEIGNANT: CRÉER DEVOIR =======================
@@ -818,11 +816,11 @@ export default function App() {
       return alert("⚠️ Ta clé publique prof est vide.\nVa dans Profil → Générer & enregistrer (clé publique on-chain).");
     }
 
-    // ✅ FIX: un prof ne peut créer que dans ses modules
+    // Un prof ne peut créer que dans ses modules
     const moduleOk = modules.some(
       (m) => m.id === String(newDevoir.moduleId) && m.enseignant.toLowerCase() === account.toLowerCase()
     );
-    if (!moduleOk) return alert("❌ Tu ne peux créer un devoir que dans tes propres modules.");
+    if (!moduleOk) return alert("Tu ne peux créer un devoir que dans tes propres modules.");
 
     try {
       const dateLimiteTimestamp = Math.floor(new Date(newDevoir.dateLimite).getTime() / 1000);
@@ -856,7 +854,7 @@ export default function App() {
       );
       await tx.wait();
 
-      alert("✅ Devoir créé !\n\n🔓 Les étudiants chiffreront avec TA clé publique.\n🔐 Tu déchiffreras avec TA clé privée (Profil).");
+      alert("Devoir créé !\n\n Les étudiants chiffreront avec TA clé publique.\n Tu déchiffreras avec TA clé privée (Profil).");
 
       setNewDevoir({ moduleId: "", titre: "", description: "", dateLimite: "" });
       setDevoirFile(null);
@@ -878,7 +876,7 @@ export default function App() {
     if (!newSoumission.identite || !newSoumission.reponse) return alert("Identité + réponse obligatoires");
 
     const pubKey = (devoir.clePublique || "").trim();
-    if (!pubKey) return alert("⚠️ Clé publique du prof/devoir vide. Le prof doit définir sa clé publique (Profil).");
+    if (!pubKey) return alert("Clé publique du prof/devoir vide. Le prof doit définir sa clé publique (Profil).");
 
     try {
       const reponseChiffree = await CryptoUtils.rsaEncrypt(newSoumission.reponse, pubKey);
@@ -905,7 +903,7 @@ export default function App() {
         cleAESChiffree = await CryptoUtils.rsaEncrypt(aesKey, pubKey);
       }
 
-      // ✅ FIX IDENTITY ON-CHAIN: l’adresse de l’étudiant est msg.sender dans le smart contract
+      // IDENTITY ON-CHAIN: l’adresse de l’étudiant est msg.sender dans le smart contract
       const tx = await contract.soumettreDevoir(
         Number(newSoumission.devoirId),
         reponseChiffree,
@@ -918,7 +916,7 @@ export default function App() {
       );
       await tx.wait();
 
-      alert("✅ Soumission envoyée !");
+      alert("Soumission envoyée !");
       setNewSoumission({ devoirId: "", identite: "", reponse: "" });
       setSelectedFile(null);
 
@@ -942,27 +940,27 @@ export default function App() {
     const devoir = devoirs.find((d) => d.id === String(s.devoirId));
     const devoirPubKey = (devoir?.clePublique || "").trim();
     if (!devoirPubKey) {
-      return alert("⚠️ Clé publique du devoir introuvable/vide.\n➡️ Recharge les devoirs, ou vérifie la création du devoir.");
+      return alert("Clé publique du devoir introuvable/vide.\n Recharge les devoirs, ou vérifie la création du devoir.");
     }
 
     try {
       const ok = await testKeyPairWithDevoirPubKey(sk, devoirPubKey);
       if (!ok) {
         alert(
-          "❌ Ta clé privée NE correspond PAS à la clé publique stockée dans ce devoir.\n\n" +
+          "Ta clé privée NE correspond PAS à la clé publique stockée dans ce devoir.\n\n" +
             "Ca arrive si :\n" +
             "- tu as régénéré tes clés après avoir créé le devoir\n" +
             "- ou le devoir a été créé avant de définir la clé publique prof\n\n" +
-            "➡️ Solution sûre : Profil (garder la même clé privée) puis recréer le devoir et refaire une soumission."
+            "Solution sûre : Profil (garder la même clé privée) puis recréer le devoir et refaire une soumission."
         );
         return;
       }
     } catch (e) {
       console.error(e);
       alert(
-        "❌ Test clé privée/clé publique impossible : " +
+        " Test clé privée/clé publique impossible : " +
           getCryptoErrorText(e) +
-          "\n\n➡️ Vérifie que tu as collé une clé privée PKCS8 base64 complète (sans espaces)."
+          "\n\n Vérifie que tu as collé une clé privée PKCS8 base64 complète (sans espaces)."
       );
       return;
     }
@@ -985,10 +983,10 @@ export default function App() {
         });
 
         fileInfo =
-          `\n\n📎 Fichier: ${s.fichierNom}\n` + `✅ Déchiffré: prêt à télécharger via le bouton ci-dessous.\n`;
+          `\n\n📎 Fichier: ${s.fichierNom}\n` + ` Déchiffré: prêt à télécharger via le bouton ci-dessous.\n`;
       }
 
-      // ✅ FIX: on affiche clairement l’adresse Ethereum de l’étudiant qui a soumis
+      // On affiche clairement l’adresse Ethereum de l’étudiant qui a soumis
       setDecryptedText(
         `👤 Identité (chiffrée → déchiffrée): ${identite}\n` +
           `🧾 Adresse Ethereum (ON-CHAIN): ${s.etudiant}\n\n` +
@@ -999,7 +997,7 @@ export default function App() {
       alert(
         "Erreur déchiffrement: " +
           getCryptoErrorText(e) +
-          "\n\n✅ Vérifie que:\n- tu utilises la clé privée du PROF (Profil)\n- la clé collée ne contient pas d'espaces/retours\n- le devoir a été créé APRÈS avoir défini la clé publique prof\n- tu n'as pas régénéré les clés après création du devoir"
+          "\n\nVérifie que:\n- tu utilises la clé privée du PROF (Profil)\n- la clé collée ne contient pas d'espaces/retours\n- le devoir a été créé APRÈS avoir défini la clé publique prof\n- tu n'as pas régénéré les clés après création du devoir"
       );
     }
   };
@@ -1009,9 +1007,9 @@ export default function App() {
     if (!contract || userRole !== "enseignant") return alert("Enseignant seulement");
     if (!correction.soumissionId || correction.note === "") return alert("ID soumission + note obligatoires");
 
-    // ✅ FIX: empêcher un prof de corriger une soumission qui n’est pas à lui
+    // Empêcher un prof de corriger une soumission qui n’est pas à lui
     const target = teacherSubmissions.find((s) => s.id === String(correction.soumissionId));
-    if (!target) return alert("❌ Tu ne peux corriger que les soumissions de TES devoirs (charge tes soumissions).");
+    if (!target) return alert(" Tu ne peux corriger que les soumissions de TES devoirs (charge tes soumissions).");
 
     try {
       let corrHash = "";
@@ -1032,7 +1030,7 @@ export default function App() {
       }
 
 
-      // ✅ FIX: la correction est liée à la SOUMISSION (donc à l’étudiant spécifique automatiquement)
+      // La correction est liée à la SOUMISSION (donc à l’étudiant spécifique automatiquement)
       const tx = await contract.corrigerSoumission(
         Number(correction.soumissionId),
         Number(correction.note),
@@ -1043,7 +1041,7 @@ export default function App() {
       );
       await tx.wait();
 
-      alert(`✅ Correction enregistrée pour l’étudiant: ${target.etudiant}`);
+      alert(`Correction enregistrée pour l’étudiant: ${target.etudiant}`);
       setCorrection({ soumissionId: "", note: "", commentaire: "" });
       if (correctionFileRef.current) correctionFileRef.current.value = "";
 
@@ -1085,7 +1083,7 @@ export default function App() {
       }
       const results = AntiPlagiat.detecter(textes.filter(Boolean));
       setPlagiarismResults(results);
-      if (!results.length) alert("✅ Aucun plagiat détecté (test simple).");
+      if (!results.length) alert("Aucun plagiat détecté (test simple).");
     } catch (e) {
       console.error(e);
       alert("Erreur analyse plagiat: " + getEthersError(e));
@@ -1102,7 +1100,7 @@ export default function App() {
   useEffect(() => {
     if (!contract || !account) return;
 
-    // ✅ Clés: prof only
+    // Clés: prof only
     if (userRole === "enseignant") {
       loadTeacherPublicKeyFromChain();
       loadTeacherPrivateKeyLocal();
@@ -1159,7 +1157,7 @@ export default function App() {
     run();
   }, [contract, userRole, newSoumission.devoirId, eligibleDevoirs]);
 
-  // ✅ FIX 1 & 2 : Filtrage devoirs selon le rôle (page Devoirs)
+  // Filtrage devoirs selon le rôle (page Devoirs)
   const devoirsVisibles = useMemo(() => {
     if (!account) return [];
     if (userRole === "enseignant") {
@@ -1174,7 +1172,7 @@ export default function App() {
     return devoirs;
   }, [devoirs, eligibleDevoirs, userRole, account, studentModuleIds]);
 
-  // ✅ FIX 1 : modules visibles pour prof
+  // Modules visibles pour prof
   const modulesVisibles = useMemo(() => {
     if (!account) return [];
     if (userRole === "enseignant") return modules.filter((m) => m.enseignant.toLowerCase() === account.toLowerCase());
