@@ -124,18 +124,5 @@ Résultat attendu :  **tests pass** (smart contract stable).
 - étudiant non inscrit au module
 - devoir déjà soumis (protection anti double soumission)
 
----
-
-## Structure du projet
-```text
-projet-blockchain-controles/
-├── contracts/
-├── scripts/
-├── test/
-├── frontend/
-├── upload-server/
-├── hardhat.config.js
-├── package.json
-└── README.md
 ```
 <div align="center"> Projet réalisé dans le cadre du module M356 — Fondamentaux de la Blockchain (ENSA Tétouan). </div>
